@@ -1,0 +1,16 @@
+[package]
+name = "stable-SPY-aptos"
+version = "1.0.0"
+authors = []
+
+[addresses]
+my_addr = "2058eb9a877b62d20e5ac86550366bc21308c31affdbe1007693dd4f64ee762d"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dev-dependencies]
