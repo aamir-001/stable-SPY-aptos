@@ -1,4 +1,4 @@
-module my_addr::INRCoin {
+module my_addr::EURCoin {
     use aptos_framework::fungible_asset::{
         Self, MintRef, TransferRef, BurnRef, Metadata, FungibleAsset
     };
@@ -10,7 +10,7 @@ module my_addr::INRCoin {
     use std::option;
 
     const E_NOT_ADMIN: u64 = 1;
-    const ASSET_SYMBOL: vector<u8> = b"inrc";
+    const ASSET_SYMBOL: vector<u8> = b"eurc";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -20,17 +20,16 @@ module my_addr::INRCoin {
         admin: address,
     }
 
-    /// Initialize the INRCoin metadata and capability refs (run once)
     fun init_module(admin: &signer) {
         let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
 
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
             option::none(),
-            utf8(b"INRCoin"),
+            utf8(b"EURCoin"),
             utf8(ASSET_SYMBOL),
             6,
-            utf8(b"https://example.com/icon.png"),
+            utf8(b"https://example.com/eurc.png"),
             utf8(b"https://example.com"),
         );
 
@@ -62,14 +61,14 @@ module my_addr::INRCoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    public entry fun mint_inrc(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun mint_eur(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    public entry fun burn_inrc(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun burn_eur(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -82,7 +81,7 @@ module my_addr::INRCoin {
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    public entry fun transfer_inrc(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun transfer_eur(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -112,5 +111,11 @@ module my_addr::INRCoin {
             error::permission_denied(E_NOT_ADMIN)
         );
         managed
+    }
+
+    public entry fun initialize(admin: &signer) {
+        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
+        assert!(!object::object_exists<Metadata>(metadata_address), 1);
+        init_module(admin);
     }
 }

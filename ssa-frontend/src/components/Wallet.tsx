@@ -1,8 +1,10 @@
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
-import { Box, Button, Card, CardContent, Typography } from "@mui/material";
+import { Button, Box, Typography, Menu, MenuItem } from "@mui/material";
+import { useState } from "react";
 
-export default function WalletDemo() {
+export default function WalletButton() {
   const { connect, disconnect, connected, account, wallets } = useWallet();
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
 
   const handleConnect = async () => {
     if (wallets.length === 0) {
@@ -12,54 +14,63 @@ export default function WalletDemo() {
     await connect(wallets[0].name);
   };
 
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleMenuClose = () => {
+    setAnchorEl(null);
+  };
+
   return (
-    <Box display="flex" justifyContent="center" mt={8}>
-      <Card sx={{ width: 400, padding: 3 }}>
-        <CardContent>
-          <Typography variant="h5" gutterBottom>
-            Aptos Wallet + MUI Demo
-          </Typography>
-
-          {connected ? (
-            <>
-              <Typography variant="body1" color="text.secondary">
-                Connected as:
-              </Typography>
-
-              <Typography
-                variant="body2"
-                sx={{
-                  background: "#f4f4f4",
-                  padding: 1,
-                  borderRadius: 1,
-                  wordBreak: "break-all",
-                  mt: 1,
-                }}
-              >
+    <Box sx={{ position: "absolute", top: 16, right: 16 }}>
+      {connected ? (
+        <>
+          <Button
+            variant="contained"
+            onClick={handleMenuOpen}
+            sx={{
+              bgcolor: "#FF8C42",
+              color: "white",
+              borderRadius: 2,
+              px: 2,
+              "&:hover": { bgcolor: "#FF7A2E" },
+            }}
+          >
+            {account?.address?.toString().slice(0, 6)}...
+            {account?.address?.toString().slice(-4)}
+          </Button>
+          <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+            <MenuItem onClick={handleMenuClose}>
+              <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                 {account?.address?.toString()}
               </Typography>
-
-              <Button
-                variant="outlined"
-                color="error"
-                sx={{ mt: 3 }}
-                onClick={disconnect}
-              >
-                Disconnect
-              </Button>
-            </>
-          ) : (
-            <Button
-              variant="contained"
-              fullWidth
-              onClick={handleConnect}
-              sx={{ mt: 2 }}
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                disconnect();
+                handleMenuClose();
+              }}
             >
-              Connect Wallet
-            </Button>
-          )}
-        </CardContent>
-      </Card>
+              Disconnect
+            </MenuItem>
+          </Menu>
+        </>
+      ) : (
+        <Button
+          variant="contained"
+          onClick={handleConnect}
+          sx={{
+            bgcolor: "#FF8C42",
+            color: "white",
+            borderRadius: 2,
+            px: 2,
+            "&:hover": { bgcolor: "#FF7A2E" },
+          }}
+        >
+          Connect Wallet
+        </Button>
+      )}
     </Box>
   );
 }
