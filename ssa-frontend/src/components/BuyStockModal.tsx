@@ -14,9 +14,7 @@ import {
   Select,
   MenuItem,
 } from "@mui/material";
-import { buyStock } from "../utils/buyStock";
-import { calculateBuyAmount } from "../utils/calculateBuyAmount";
-import { aptosClient } from "../utils/aptosClient";
+import { mockApi } from "../services/mockApi";
 
 interface BuyStockModalProps {
   open: boolean;
@@ -38,7 +36,7 @@ const stocks = [
 ];
 
 export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
-  const { account, signAndSubmitTransaction } = useWallet();
+  const { account } = useWallet();
   const [selectedCurrency, setSelectedCurrency] = useState("INR");
   const [selectedStock, setSelectedStock] = useState("GOOGC");
   const [currencyAmount, setCurrencyAmount] = useState<string>("");
@@ -79,11 +77,7 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
       const currencyAmountSmallest = Math.floor(currencyAmountNum * Math.pow(10, 6));
       const priceSmallest = Math.floor(priceNum * Math.pow(10, 6));
 
-      const amount = await calculateBuyAmount({
-        currencyAmount: currencyAmountSmallest,
-        priceInCurrency: priceSmallest,
-      });
-
+      const amount = await mockApi.calculateBuyAmount(currencyAmountSmallest, priceSmallest);
       setStockAmount(amount / Math.pow(10, 6)); // Convert back to readable format
     } catch (err: any) {
       setError(err.message || "Failed to calculate stock amount");
@@ -115,31 +109,20 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
       const currencyAmountSmallest = Math.floor(currencyAmountNum * Math.pow(10, 6));
       const priceSmallest = Math.floor(priceNum * Math.pow(10, 6));
 
-      const committedTransaction = await signAndSubmitTransaction(
-        buyStock({
-          user: account.address.toString(),
-          currency: selectedCurrency,
-          stock: selectedStock,
-          currencyAmount: currencyAmountSmallest,
-          priceInCurrency: priceSmallest,
-        })
+      const result = await mockApi.buyStock(
+        account.address.toString(),
+        selectedCurrency,
+        selectedStock,
+        currencyAmountSmallest,
+        priceSmallest
       );
 
-      const executedTransaction = await aptosClient().waitForTransaction({
-        transactionHash: committedTransaction.hash,
-      });
-
-      setSuccess(`Transaction succeeded! Hash: ${executedTransaction.hash}`);
+      setSuccess(`Transaction succeeded! Hash: ${result.hash}`);
       setCurrencyAmount("");
       setStockPrice("");
       setStockAmount(null);
     } catch (err: any) {
-      const errorMsg = err.message || "Failed to buy stock";
-      if (errorMsg.includes("E_NOT_ADMIN") || errorMsg.includes("NOT_ADMIN")) {
-        setError("Only the contract admin can execute this transaction. Please use the admin wallet.");
-      } else {
-        setError(errorMsg);
-      }
+      setError(err.message || "Failed to buy stock");
     } finally {
       setBuying(false);
     }
@@ -151,25 +134,30 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
       onClose={onClose}
       PaperProps={{
         sx: {
-          bgcolor: "#1a1a1a",
-          borderRadius: 3,
-          boxShadow: "0 0 2px #888",
-          minWidth: 450,
+          bgcolor: "#ffffff",
+          borderRadius: 2,
+          boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
+          border: "1px solid #e0e0e0",
+          minWidth: 500,
         },
       }}
     >
-      <DialogContent>
-        <Typography variant="h6" sx={{ mb: 3, color: "#FF8C42" }}>
+      <DialogContent sx={{ p: 3 }}>
+        <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
           Buy Stock Coins
         </Typography>
 
         {/* Currency Selection */}
         <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel sx={{ color: "#fff" }}>Select Currency</InputLabel>
+          <InputLabel sx={{ color: "#666666" }}>Select Currency</InputLabel>
           <Select
             value={selectedCurrency}
             onChange={(e) => setSelectedCurrency(e.target.value)}
-            sx={{ color: "#fff", "& .MuiOutlinedInput-notchedOutline": { borderColor: "#444" } }}
+            sx={{
+              color: "#000000",
+              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
+              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
+            }}
           >
             {currencies.map((curr) => (
               <MenuItem key={curr.value} value={curr.value}>
@@ -181,11 +169,15 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
 
         {/* Stock Selection */}
         <FormControl fullWidth sx={{ mb: 2 }}>
-          <InputLabel sx={{ color: "#fff" }}>Select Stock</InputLabel>
+          <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
           <Select
             value={selectedStock}
             onChange={(e) => setSelectedStock(e.target.value)}
-            sx={{ color: "#fff", "& .MuiOutlinedInput-notchedOutline": { borderColor: "#444" } }}
+            sx={{
+              color: "#000000",
+              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
+              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
+            }}
           >
             {stocks.map((stock) => (
               <MenuItem key={stock.value} value={stock.value}>
@@ -197,7 +189,7 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
 
         {/* Currency Amount */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" sx={{ color: "#888", mb: 1 }}>
+          <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontWeight: 500 }}>
             Currency Amount ({selectedCurrency})
           </Typography>
           <TextField
@@ -209,10 +201,10 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
             disabled={buying}
             sx={{
               "& .MuiOutlinedInput-root": {
-                color: "#fff",
-                "& fieldset": { borderColor: "#444" },
-                "&:hover fieldset": { borderColor: "#FF8C42" },
-                "&.Mui-focused fieldset": { borderColor: "#FF8C42" },
+                color: "#000000",
+                "& fieldset": { borderColor: "#e0e0e0" },
+                "&:hover fieldset": { borderColor: "#00C853" },
+                "&.Mui-focused fieldset": { borderColor: "#00C853" },
               },
             }}
           />
@@ -220,7 +212,7 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
 
         {/* Stock Price */}
         <Box sx={{ mb: 2 }}>
-          <Typography variant="body2" sx={{ color: "#888", mb: 1 }}>
+          <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontWeight: 500 }}>
             Stock Price ({selectedCurrency} per {selectedStock})
           </Typography>
           <TextField
@@ -232,10 +224,10 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
             disabled={buying}
             sx={{
               "& .MuiOutlinedInput-root": {
-                color: "#fff",
-                "& fieldset": { borderColor: "#444" },
-                "&:hover fieldset": { borderColor: "#FF8C42" },
-                "&.Mui-focused fieldset": { borderColor: "#FF8C42" },
+                color: "#000000",
+                "& fieldset": { borderColor: "#e0e0e0" },
+                "&:hover fieldset": { borderColor: "#00C853" },
+                "&.Mui-focused fieldset": { borderColor: "#00C853" },
               },
             }}
           />
@@ -249,22 +241,25 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
           disabled={calculating || !currencyAmount || !stockPrice}
           sx={{
             mb: 2,
-            borderColor: "#FF8C42",
-            color: "#FF8C42",
-            "&:hover": { borderColor: "#FF7A2E", bgcolor: "rgba(255, 140, 66, 0.1)" },
-            "&:disabled": { borderColor: "#444", color: "#888" },
+            borderColor: "#00C853",
+            color: "#00C853",
+            textTransform: "none",
+            fontWeight: 500,
+            fontFamily: "'Inter', sans-serif",
+            "&:hover": { borderColor: "#00A043", bgcolor: "rgba(0, 200, 83, 0.05)" },
+            "&:disabled": { borderColor: "#e0e0e0", color: "#bdbdbd" },
           }}
         >
-          {calculating ? <CircularProgress size={20} sx={{ color: "#FF8C42" }} /> : "Calculate Stock Amount"}
+          {calculating ? <CircularProgress size={20} sx={{ color: "#00C853" }} /> : "Calculate Stock Amount"}
         </Button>
 
         {/* Stock Amount Display */}
         {stockAmount !== null && (
-          <Box sx={{ mb: 2, p: 2, bgcolor: "#2a2a2a", borderRadius: 2 }}>
-            <Typography variant="body2" sx={{ color: "#888", mb: 1 }}>
+          <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 2 }}>
+            <Typography variant="body2" sx={{ color: "#666666", mb: 1 }}>
               You will receive:
             </Typography>
-            <Typography variant="h5" sx={{ color: "#FF8C42" }}>
+            <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
               {stockAmount.toFixed(6)} {selectedStock}
             </Typography>
           </Box>
@@ -272,12 +267,12 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
 
         {/* Error/Success Messages */}
         {error && (
-          <Alert severity="error" sx={{ mb: 2, bgcolor: "#2a1a1a", color: "#ff4444" }}>
+          <Alert severity="error" sx={{ mb: 2, bgcolor: "#ffebee", color: "#d32f2f" }}>
             {error}
           </Alert>
         )}
         {success && (
-          <Alert severity="success" sx={{ mb: 2, bgcolor: "#1a2a1a", color: "#44ff44" }}>
+          <Alert severity="success" sx={{ mb: 2, bgcolor: "#e8f5e9", color: "#2e7d32" }}>
             {success}
           </Alert>
         )}
@@ -289,9 +284,11 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
             onClick={onClose}
             sx={{
               flex: 1,
-              borderColor: "#444",
-              color: "#fff",
-              "&:hover": { borderColor: "#666" },
+              borderColor: "#e0e0e0",
+              color: "#666666",
+              textTransform: "none",
+              fontWeight: 500,
+              "&:hover": { borderColor: "#bdbdbd", bgcolor: "#f5f5f5" },
             }}
           >
             Close
@@ -302,16 +299,19 @@ export default function BuyStockModal({ open, onClose }: BuyStockModalProps) {
             disabled={buying || !account || !currencyAmount || !stockPrice || stockAmount === null}
             sx={{
               flex: 1,
-              bgcolor: "#FF8C42",
-              "&:hover": { bgcolor: "#FF7A2E" },
-              "&:disabled": { bgcolor: "#444", color: "#888" },
+              bgcolor: "#00C853",
+              color: "#ffffff",
+              textTransform: "none",
+              fontWeight: 600,
+              fontFamily: "'Inter', sans-serif",
+              "&:hover": { bgcolor: "#00A043" },
+              "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
             }}
           >
-            {buying ? <CircularProgress size={20} sx={{ color: "#fff" }} /> : "Buy Stock"}
+            {buying ? <CircularProgress size={20} sx={{ color: "#ffffff" }} /> : "Buy Stock"}
           </Button>
         </Box>
       </DialogContent>
     </Dialog>
   );
 }
-
