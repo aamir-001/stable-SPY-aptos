@@ -1,4 +1,4 @@
-module my_addr::GoogleCoin {
+module my_addr::TSLACoin {
     use aptos_framework::fungible_asset::{
         Self, MintRef, TransferRef, BurnRef, Metadata, FungibleAsset
     };
@@ -9,11 +9,9 @@ module my_addr::GoogleCoin {
     use std::string::utf8;
     use std::option;
 
-    /// Error codes
     const E_NOT_ADMIN: u64 = 1;
-
-    /// Symbol for GoogleCoin
-    const ASSET_SYMBOL: vector<u8> = b"GOOGC";
+    const E_ALREADY_INITIALIZED: u64 = 2;
+    const ASSET_SYMBOL: vector<u8> = b"TSLAC";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -23,43 +21,39 @@ module my_addr::GoogleCoin {
         admin: address,
     }
 
-    /// Initialize metadata and refs (run once)
     fun init_module(admin: &signer) {
-        // Create non-deletable named object for GoogleCoin
         let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
 
-        // Create FA metadata with name, symbol, decimals, icon, and project URI
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
-            option::none(),                              // no max supply
-            utf8(b"GoogleCoin"),                          // name
-            utf8(ASSET_SYMBOL),                           // symbol
-            6,                                            // decimals (supports fractional shares)
-            utf8(b"https://example.com/google.png"),       // icon URI (placeholder)
-            utf8(b"https://example.com"),                 // project URI
+            option::none(),
+            utf8(b"Tesla Stock Token"),
+            utf8(ASSET_SYMBOL),
+            6,
+            utf8(b"https://example.com/tesla-icon.png"),
+            utf8(b"https://example.com"),
         );
 
-        // Generate Mint, Transfer, Burn capabilities
         let mint_ref = fungible_asset::generate_mint_ref(constructor_ref);
         let transfer_ref = fungible_asset::generate_transfer_ref(constructor_ref);
         let burn_ref = fungible_asset::generate_burn_ref(constructor_ref);
 
-        // Store all refs and admin address
         let metadata_signer = object::generate_signer(constructor_ref);
         move_to(
             &metadata_signer,
-            ManagedFungibleAsset {
-                mint_ref,
-                transfer_ref,
-                burn_ref,
-                admin: signer::address_of(admin),
-            }
+            ManagedFungibleAsset { mint_ref, transfer_ref, burn_ref, admin: signer::address_of(admin) }
         );
     }
 
-    //
-    // 🔍 View functions
-    //
+    public entry fun initialize(admin: &signer) {
+        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
+        assert!(
+            !object::object_exists<Metadata>(metadata_address),
+            error::already_exists(E_ALREADY_INITIALIZED)
+        );
+
+        init_module(admin);
+    }
 
     #[view]
     public fun get_metadata(): Object<Metadata> {
@@ -73,20 +67,13 @@ module my_addr::GoogleCoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    //
-    // 🛠️ Admin functions (only admin can mint, burn, transfer)
-    //
-
-    /// Mint GoogleCoin to recipient’s account
     public entry fun mint_stock_token(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
-
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    /// Burn GoogleCoin from `from` address
     public entry fun burn_stock_token(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
@@ -96,7 +83,6 @@ module my_addr::GoogleCoin {
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    /// Admin-only transfer between users
     public entry fun transfer_stock_token(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
@@ -107,10 +93,6 @@ module my_addr::GoogleCoin {
         let to_store = primary_fungible_store::ensure_primary_store_exists(to, asset);
         fungible_asset::deposit_with_ref(&managed.transfer_ref, to_store, fa);
     }
-
-    //
-    // 🧩 Internal helper
-    //
 
     inline fun ensure_admin_and_borrow(
         admin_signer: &signer,
