@@ -3,6 +3,9 @@ import { Network } from "@aptos-labs/ts-sdk";
 import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel } from "@mui/material";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import WalletButton from "./components/Wallet";
+import BalanceModal from "./components/BalanceModal";
+import INRModal from "./components/INRModal";
+import BuyStockModal from "./components/BuyStockModal";
 import { useState } from "react";
 
 const exchangeRates = { INR: 83.5, USD: 1.0, CNY: 7.2 };
@@ -16,6 +19,9 @@ export default function App() {
   const [aptBalance] = useState(1000);
   const [selectedCurrency, setSelectedCurrency] = useState("USD");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
+  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
+  const [inrModalOpen, setInrModalOpen] = useState(false);
+  const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
 
   const currencyValue = aptBalance * exchangeRates[selectedCurrency as keyof typeof exchangeRates];
   const canBuy = Math.floor(currencyValue / selectedStock.price);
@@ -34,7 +40,34 @@ export default function App() {
               <Card sx={{ bgcolor: "#1a1a1a", borderRadius: 3, boxShadow: "0 0 2px #888" }}>
                 <CardContent>
                   <Typography variant="h6" sx={{ mb: 2, color: "#FF8C42" }}>Currency Exchange</Typography>
-                  <Typography variant="body1" sx={{ mb: 2 }}>APT Balance: {aptBalance.toFixed(2)}</Typography>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+                    <Typography variant="body1">APT Balance: {aptBalance.toFixed(2)}</Typography>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      onClick={() => setBalanceModalOpen(true)}
+                      sx={{
+                        borderColor: "#FF8C42",
+                        color: "#FF8C42",
+                        "&:hover": { borderColor: "#FF7A2E", bgcolor: "rgba(255, 140, 66, 0.1)" },
+                      }}
+                    >
+                      View Balance
+                    </Button>
+                  </Box>
+                  <Button
+                    variant="outlined"
+                    fullWidth
+                    onClick={() => setInrModalOpen(true)}
+                    sx={{
+                      mb: 2,
+                      borderColor: "#FF8C42",
+                      color: "#FF8C42",
+                      "&:hover": { borderColor: "#FF7A2E", bgcolor: "rgba(255, 140, 66, 0.1)" },
+                    }}
+                  >
+                    Manage INR Coin
+                  </Button>
                   <FormControl fullWidth sx={{ mb: 2 }}>
                     <InputLabel sx={{ color: "#fff" }}>Select Currency</InputLabel>
                     <Select
@@ -53,9 +86,14 @@ export default function App() {
                   <Button
                     variant="contained"
                     fullWidth
+                    onClick={() => {
+                      if (selectedCurrency === "INR") {
+                        setInrModalOpen(true);
+                      }
+                    }}
                     sx={{ mt: 2, bgcolor: "#FF8C42", "&:hover": { bgcolor: "#FF7A2E" } }}
                   >
-                    Purchase {selectedCurrency}
+                    {selectedCurrency === "INR" ? "Manage INR" : `Purchase ${selectedCurrency}`}
                   </Button>
                 </CardContent>
               </Card>
@@ -103,6 +141,7 @@ export default function App() {
                   <Button
                     variant="contained"
                     fullWidth
+                    onClick={() => setBuyStockModalOpen(true)}
                     sx={{ mt: 2, bgcolor: "#FF8C42", "&:hover": { bgcolor: "#FF7A2E" } }}
                   >
                     Buy {selectedStock.symbol} Coins
@@ -112,6 +151,9 @@ export default function App() {
             </Grid>
           </Grid>
         </Container>
+        <BalanceModal open={balanceModalOpen} onClose={() => setBalanceModalOpen(false)} />
+        <INRModal open={inrModalOpen} onClose={() => setInrModalOpen(false)} />
+        <BuyStockModal open={buyStockModalOpen} onClose={() => setBuyStockModalOpen(false)} />
       </Box>
     </AptosWalletAdapterProvider>
   );
