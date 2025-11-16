@@ -9,10 +9,13 @@ app.use(express.urlencoded({ extended: true })); // for parsing URL-encoded requ
 
 const ADMIN_KEY = process.env.ADMIN_KEY || "default_admin_key";
 
-app.get('/api/data', (req: Request, res: Response) => {
+app.get('/api/exchange-coins', (req: Request, res: Response) => {
   // Return some data or handle the request...
+  // teh request should contain the coin name
+  // sign it using the utils in aptos client
 });
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
