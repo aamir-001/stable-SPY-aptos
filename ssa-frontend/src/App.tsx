@@ -22,8 +22,9 @@ const stocks = [
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
 
-export default function App() {
-  const { account } = useWallet();
+// Main content component that uses the wallet
+function MainContent() {
+  const { account, connected } = useWallet();
   const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("USD");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
@@ -43,6 +44,13 @@ export default function App() {
   const [intradayData, setIntradayData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Debug logs
+  useEffect(() => {
+    console.log("Connected:", connected);
+    console.log("Account:", account);
+    console.log("Account address:", account?.address);
+  }, [connected, account]);
 
   // Load stock prices
   useEffect(() => {
@@ -83,10 +91,16 @@ export default function App() {
     loadIntradayData();
   }, [selectedStock]);
 
-  // Load balances when wallet connects or currency changes
+  // Load balances when wallet connects
   useEffect(() => {
     const loadBalances = async () => {
-      if (!account?.address) {
+      console.log("=== Load Balances Effect ===");
+      console.log("Connected:", connected);
+      console.log("Account:", account);
+      console.log("Account address:", account?.address?.toString());
+
+      if (!connected || !account?.address) {
+        console.log("No wallet connected or no address, clearing balances");
         setAptBalance(null);
         setInrBalance(null);
         setCnyBalance(null);
@@ -96,18 +110,42 @@ export default function App() {
 
       setLoadingBalances(true);
       try {
+        const addressString = account.address.toString();
+        console.log("Loading balances for address:", addressString);
+        
         // Load all balances in parallel
         const [apt, inr, cny, eur] = await Promise.all([
-          getAccountAPTBalance({ accountAddress: account.address.toString() }).catch(() => 0),
-          getINRBalance({ accountAddress: account.address.toString() }).catch(() => 0),
-          getCNYBalance({ accountAddress: account.address.toString() }).catch(() => 0),
-          getEURBalance({ accountAddress: account.address.toString() }).catch(() => 0),
+          getAccountAPTBalance({ accountAddress: addressString }).catch((e) => {
+            console.error("APT balance error:", e);
+            return 0;
+          }),
+          getINRBalance({ accountAddress: addressString }).catch((e) => {
+            console.error("INR balance error:", e);
+            return 0;
+          }),
+          getCNYBalance({ accountAddress: addressString }).catch((e) => {
+            console.error("CNY balance error:", e);
+            return 0;
+          }),
+          getEURBalance({ accountAddress: addressString }).catch((e) => {
+            console.error("EUR balance error:", e);
+            return 0;
+          }),
         ]);
 
-        setAptBalance(apt / 100000000); // Convert from octas to APT
-        setInrBalance(inr / Math.pow(10, 6)); // Convert from smallest unit to INR
-        setCnyBalance(cny / Math.pow(10, 6)); // Convert from smallest unit to CNY
-        setEurBalance(eur / Math.pow(10, 6)); // Convert from smallest unit to EUR
+        console.log("Raw balances - APT:", apt, "INR:", inr, "CNY:", cny, "EUR:", eur);
+        
+        const convertedApt = apt / 100000000;
+        const convertedInr = inr / Math.pow(10, 6);
+        const convertedCny = cny / Math.pow(10, 6);
+        const convertedEur = eur / Math.pow(10, 6);
+        
+        setAptBalance(convertedApt);
+        setInrBalance(convertedInr);
+        setCnyBalance(convertedCny);
+        setEurBalance(convertedEur);
+        
+        console.log("Converted balances - APT:", convertedApt, "INR:", convertedInr, "CNY:", convertedCny, "EUR:", convertedEur);
       } catch (error) {
         console.error("Error loading balances:", error);
       } finally {
@@ -119,20 +157,28 @@ export default function App() {
     // Refresh balances every 30 seconds
     const interval = setInterval(loadBalances, 30000);
     return () => clearInterval(interval);
-  }, [account?.address]);
+  }, [connected, account?.address]);
 
   const currentQuote = stockQuotes[selectedStock.symbol];
   const currentStockPrice = currentQuote?.price || 0;
   
   // Get the actual balance for selected currency
   const getCurrentBalance = (): number => {
+    console.log("Getting current balance for currency:", selectedCurrency);
+    console.log("Balances - APT:", aptBalance, "INR:", inrBalance, "CNY:", cnyBalance, "EUR:", eurBalance);
+    
     if (selectedCurrency === "USD") {
-      return aptBalance ? aptBalance * exchangeRates.USD : 0;
+      const balance = aptBalance ? aptBalance * exchangeRates.USD : 0;
+      console.log("USD balance calculated:", balance);
+      return balance;
     } else if (selectedCurrency === "INR") {
+      console.log("INR balance:", inrBalance);
       return inrBalance || 0;
     } else if (selectedCurrency === "CNY") {
+      console.log("CNY balance:", cnyBalance);
       return cnyBalance || 0;
     } else if (selectedCurrency === "EUR") {
+      console.log("EUR balance:", eurBalance);
       return eurBalance || 0;
     }
     return 0;
@@ -148,225 +194,233 @@ export default function App() {
   }));
 
   return (
-    <AptosWalletAdapterProvider autoConnect={true} dappConfig={{ network: Network.TESTNET }}>
-      <Box sx={{ minHeight: "100vh", bgcolor: "#ffffff", py: 3 }}>
-        <WalletButton />
-        <Container maxWidth="xl">
-          <Typography variant="h3" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-            TABDEEL
-          </Typography>
+    <Box sx={{ minHeight: "100vh", bgcolor: "#ffffff", py: 3 }}>
+      <WalletButton />
+      <Container maxWidth="xl">
+        <Typography variant="h3" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
+          TABDEEL
+        </Typography>
 
-          {/* Stock Prices - Front and Center */}
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-            <Grid size={{ xs: 12 }}>
-              <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-                <CardContent sx={{ p: 4 }}>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-                    <Typography variant="h5" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                      Stock Prices
-                    </Typography>
-                    <FormControl sx={{ minWidth: 200 }}>
-                      <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
-                      <Select
-                        value={selectedStock.symbol}
-                        onChange={(e) => setSelectedStock(stocks.find(s => s.symbol === e.target.value) || stocks[0])}
-                        sx={{
-                          color: "#000000",
-                          "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
-                          "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
-                        }}
-                      >
-                        {stocks.map((stock) => (
-                          <MenuItem key={stock.symbol} value={stock.symbol}>
-                            {stock.name} ({stock.alphaSymbol})
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Box>
-
-                  {error && (
-                    <Box sx={{ mb: 2, p: 2, bgcolor: "#fff3cd", borderRadius: 2, border: "1px solid #ffc107" }}>
-                      <Typography sx={{ color: "#856404", fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}>
-                        ⚠️ {error}
-                      </Typography>
-                    </Box>
-                  )}
-                  {loading ? (
-                    <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-                      <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>Loading stock data...</Typography>
-                    </Box>
-                  ) : currentQuote ? (
-                    <>
-                      <Box sx={{ mb: 4 }}>
-                        <Box sx={{ display: "flex", alignItems: "baseline", gap: 2, mb: 1 }}>
-                          <Typography variant="h3" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Inter', sans-serif" }}>
-                            ${currentQuote.price.toFixed(2)}
-                          </Typography>
-                          <Chip
-                            label={`${currentQuote.change >= 0 ? "+" : ""}${currentQuote.change.toFixed(2)} (${currentQuote.changePercent >= 0 ? "+" : ""}${currentQuote.changePercent.toFixed(2)}%)`}
-                            sx={{
-                              bgcolor: currentQuote.change >= 0 ? "#e8f5e9" : "#ffebee",
-                              color: currentQuote.change >= 0 ? "#2e7d32" : "#d32f2f",
-                              fontWeight: 600,
-                              fontFamily: "'Inter', sans-serif",
-                            }}
-                          />
-                        </Box>
-                        <Typography variant="h6" sx={{ color: "#666666", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>
-                          {selectedStock.name} ({currentQuote.symbol})
-                        </Typography>
-                      </Box>
-
-                      {chartData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height={400}>
-                          <LineChart data={chartData}>
-                            <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                            <XAxis 
-                              dataKey="time" 
-                              stroke="#999999"
-                              tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                            />
-                            <YAxis 
-                              stroke="#999999"
-                              tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                              domain={['dataMin - 1', 'dataMax + 1']}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                backgroundColor: "#ffffff",
-                                border: "1px solid #e0e0e0",
-                                borderRadius: "8px",
-                                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                                fontFamily: "'Inter', sans-serif",
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="price"
-                              stroke="#00C853"
-                              strokeWidth={3}
-                              dot={false}
-                              activeDot={{ r: 6, fill: "#00C853" }}
-                            />
-                          </LineChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <Box sx={{ py: 4, textAlign: "center" }}>
-                          <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                            No intraday data available. Market may be closed.
-                          </Typography>
-                        </Box>
-                      )}
-                    </>
-                  ) : (
-                    <Box sx={{ py: 8, textAlign: "center" }}>
-                      <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                        Unable to load stock data. Please try again later.
-                      </Typography>
-                    </Box>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-          </Grid>
-
-          <Grid container spacing={3}>
-            <Grid size={{ xs: 12, md: 4 }}>
-              <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    Buying Power
+        {/* Stock Prices - Front and Center */}
+        <Grid container spacing={3} sx={{ mb: 3 }}>
+          <Grid size={{ xs: 12 }}>
+            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
+              <CardContent sx={{ p: 4 }}>
+                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+                  <Typography variant="h5" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
+                    Stock Prices
                   </Typography>
-                  
-                  <FormControl fullWidth sx={{ mb: 3 }}>
-                    <InputLabel sx={{ color: "#666666" }}>Select Currency</InputLabel>
+                  <FormControl sx={{ minWidth: 200 }}>
+                    <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
                     <Select
-                      value={selectedCurrency}
-                      onChange={(e) => {
-                        const newCurrency = e.target.value as "USD" | "INR" | "CNY" | "EUR";
-                        setSelectedCurrency(newCurrency);
-                        // Map currency to balance currency for modal
-                        if (newCurrency === "USD") {
-                          setBalanceCurrency("APT");
-                        } else {
-                          setBalanceCurrency(newCurrency);
-                        }
-                      }}
+                      value={selectedStock.symbol}
+                      onChange={(e) => setSelectedStock(stocks.find(s => s.symbol === e.target.value) || stocks[0])}
                       sx={{
                         color: "#000000",
                         "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
                         "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
                       }}
                     >
-                      <MenuItem value="USD">USD (APT)</MenuItem>
-                      <MenuItem value="INR">INR</MenuItem>
-                      <MenuItem value="CNY">CNY</MenuItem>
-                      <MenuItem value="EUR">EUR</MenuItem>
+                      {stocks.map((stock) => (
+                        <MenuItem key={stock.symbol} value={stock.symbol}>
+                          {stock.name} ({stock.alphaSymbol})
+                        </MenuItem>
+                      ))}
                     </Select>
                   </FormControl>
+                </Box>
 
-                  {loadingBalances ? (
-                    <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-                      <CircularProgress size={24} sx={{ color: "#00C853" }} />
-                    </Box>
-                  ) : (
-                    <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
-                      {currentBalance.toFixed(selectedCurrency === "USD" ? 4 : 6)} {selectedCurrency}
-                    </Typography>
-                  )}
-                </CardContent>
-              </Card>
-            </Grid>
-
-            <Grid size={{ xs: 12, md: 8 }}>
-              <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-                <CardContent sx={{ p: 3 }}>
-                  <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    Purchase Stock Coins
-                  </Typography>
-                  <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 2 }}>
-                    <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
-                      Current Price
-                    </Typography>
-                    <Typography variant="h5" sx={{ color: "#000000", fontWeight: 600, mb: 2, fontFamily: "'Inter', sans-serif" }}>
-                      ${currentStockPrice.toFixed(2)} {selectedCurrency}
-                    </Typography>
-                    <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
-                      You can buy
-                    </Typography>
-                    <Typography variant="h6" sx={{ color: "#00C853", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                      {canBuy} {selectedStock.symbol} coins
+                {error && (
+                  <Box sx={{ mb: 2, p: 2, bgcolor: "#fff3cd", borderRadius: 2, border: "1px solid #ffc107" }}>
+                    <Typography sx={{ color: "#856404", fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}>
+                      ⚠️ {error}
                     </Typography>
                   </Box>
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => setBuyStockModalOpen(true)}
+                )}
+                {loading ? (
+                  <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
+                    <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>Loading stock data...</Typography>
+                  </Box>
+                ) : currentQuote ? (
+                  <>
+                    <Box sx={{ mb: 4 }}>
+                      <Box sx={{ display: "flex", alignItems: "baseline", gap: 2, mb: 1 }}>
+                        <Typography variant="h3" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Inter', sans-serif" }}>
+                          ${currentQuote.price.toFixed(2)}
+                        </Typography>
+                        <Chip
+                          label={`${currentQuote.change >= 0 ? "+" : ""}${currentQuote.change.toFixed(2)} (${currentQuote.changePercent >= 0 ? "+" : ""}${currentQuote.changePercent.toFixed(2)}%)`}
+                          sx={{
+                            bgcolor: currentQuote.change >= 0 ? "#e8f5e9" : "#ffebee",
+                            color: currentQuote.change >= 0 ? "#2e7d32" : "#d32f2f",
+                            fontWeight: 600,
+                            fontFamily: "'Inter', sans-serif",
+                          }}
+                        />
+                      </Box>
+                      <Typography variant="h6" sx={{ color: "#666666", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>
+                        {selectedStock.name} ({currentQuote.symbol})
+                      </Typography>
+                    </Box>
+
+                    {chartData.length > 0 ? (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={chartData}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                          <XAxis 
+                            dataKey="time" 
+                            stroke="#999999"
+                            tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
+                          />
+                          <YAxis 
+                            stroke="#999999"
+                            tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
+                            domain={['dataMin - 1', 'dataMax + 1']}
+                          />
+                          <Tooltip
+                            contentStyle={{
+                              backgroundColor: "#ffffff",
+                              border: "1px solid #e0e0e0",
+                              borderRadius: "8px",
+                              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                              fontFamily: "'Inter', sans-serif",
+                            }}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="price"
+                            stroke="#00C853"
+                            strokeWidth={3}
+                            dot={false}
+                            activeDot={{ r: 6, fill: "#00C853" }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <Box sx={{ py: 4, textAlign: "center" }}>
+                        <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
+                          No intraday data available. Market may be closed.
+                        </Typography>
+                      </Box>
+                    )}
+                  </>
+                ) : (
+                  <Box sx={{ py: 8, textAlign: "center" }}>
+                    <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
+                      Unable to load stock data. Please try again later.
+                    </Typography>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
+                  Buying Power
+                </Typography>
+                
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                  <InputLabel sx={{ color: "#666666" }}>Select Currency</InputLabel>
+                  <Select
+                    value={selectedCurrency}
+                    onChange={(e) => {
+                      const newCurrency = e.target.value as "USD" | "INR" | "CNY" | "EUR";
+                      console.log("Currency changed to:", newCurrency);
+                      setSelectedCurrency(newCurrency);
+                      // Map currency to balance currency for modal
+                      if (newCurrency === "USD") {
+                        setBalanceCurrency("APT");
+                      } else {
+                        setBalanceCurrency(newCurrency);
+                      }
+                    }}
                     sx={{
-                      bgcolor: "#00C853",
-                      color: "#ffffff",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontFamily: "'Inter', sans-serif",
-                      py: 1.5,
-                      "&:hover": { bgcolor: "#00A043" },
+                      color: "#000000",
+                      "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
+                      "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
                     }}
                   >
-                    Buy {selectedStock.symbol} Coins
-                  </Button>
-                </CardContent>
-              </Card>
-            </Grid>
+                    <MenuItem value="USD">USD (APT)</MenuItem>
+                    <MenuItem value="INR">INR</MenuItem>
+                    <MenuItem value="CNY">CNY</MenuItem>
+                    <MenuItem value="EUR">EUR</MenuItem>
+                  </Select>
+                </FormControl>
+
+                {loadingBalances ? (
+                  <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                    <CircularProgress size={24} sx={{ color: "#00C853" }} />
+                  </Box>
+                ) : (
+                  <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
+                    {currentBalance.toFixed(selectedCurrency === "USD" ? 4 : 6)} {selectedCurrency}
+                  </Typography>
+                )}
+              </CardContent>
+            </Card>
           </Grid>
-        </Container>
-        <BalanceModal 
-          open={balanceModalOpen} 
-          onClose={() => setBalanceModalOpen(false)} 
-          currency={balanceCurrency}
-        />
-        <BuyStockModal open={buyStockModalOpen} onClose={() => setBuyStockModalOpen(false)} />
-      </Box>
+
+          <Grid size={{ xs: 12, md: 8 }}>
+            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
+              <CardContent sx={{ p: 3 }}>
+                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
+                  Purchase Stock Coins
+                </Typography>
+                <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 2 }}>
+                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
+                    Current Price
+                  </Typography>
+                  <Typography variant="h5" sx={{ color: "#000000", fontWeight: 600, mb: 2, fontFamily: "'Inter', sans-serif" }}>
+                    ${currentStockPrice.toFixed(2)} {selectedCurrency}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
+                    You can buy
+                  </Typography>
+                  <Typography variant="h6" sx={{ color: "#00C853", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                    {canBuy} {selectedStock.symbol} coins
+                  </Typography>
+                </Box>
+                <Button
+                  variant="contained"
+                  fullWidth
+                  onClick={() => setBuyStockModalOpen(true)}
+                  sx={{
+                    bgcolor: "#00C853",
+                    color: "#ffffff",
+                    textTransform: "none",
+                    fontWeight: 600,
+                    fontFamily: "'Inter', sans-serif",
+                    py: 1.5,
+                    "&:hover": { bgcolor: "#00A043" },
+                  }}
+                >
+                  Buy {selectedStock.symbol} Coins
+                </Button>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </Container>
+      <BalanceModal 
+        open={balanceModalOpen} 
+        onClose={() => setBalanceModalOpen(false)} 
+        currency={balanceCurrency}
+      />
+      <BuyStockModal open={buyStockModalOpen} onClose={() => setBuyStockModalOpen(false)} />
+    </Box>
+  );
+}
+
+// App component with provider
+export default function App() {
+  return (
+    <AptosWalletAdapterProvider autoConnect={true} dappConfig={{ network: Network.TESTNET }}>
+      <MainContent />
     </AptosWalletAdapterProvider>
   );
 }

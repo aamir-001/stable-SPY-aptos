@@ -14,6 +14,7 @@ export const getINRBalance = async (args: AccountINRBalanceArguments): Promise<n
       functionArguments: [accountAddress],
     },
   });
+  console.log(balance);
   return balance[0];
 };
 
