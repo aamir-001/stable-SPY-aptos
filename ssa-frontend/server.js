@@ -1,4 +1,5 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
+
 const app = express();
 const PORT = 3001; // or any other port you prefer
 
@@ -9,10 +10,12 @@ app.use(express.urlencoded({ extended: true })); // for parsing URL-encoded requ
 
 const ADMIN_KEY = process.env.ADMIN_KEY || "default_admin_key";
 
-app.get('/api/exchange-coins', (req: Request, res: Response) => {
+app.get('/api/exchange-coins', (req, res) => {
   // Return some data or handle the request...
   // teh request should contain the coin name
   // sign it using the utils in aptos client
+  console.log("API HIT");
+  return res.json({ message: 'Youve hit the Exchange coins endpoint'});
 });
 
 app.listen(PORT, () => {
