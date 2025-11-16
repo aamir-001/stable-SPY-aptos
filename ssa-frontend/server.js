@@ -29,7 +29,8 @@ app.get("/health", (req, res) => {
 });
 
 // Buy stock route
-app.post("/buy-stock", async (req, res) => {
+app.post("/api/buy-stock", async (req, res) => {
+  console.log("BUY STOCK REQUEST RECEIVED");
   try {
     console.log("REQ BODY:", req.body);
     const { user, currency, stock, currencyAmount, price } = req.body;
@@ -42,7 +43,7 @@ app.post("/buy-stock", async (req, res) => {
 });
 
 // Sell stock route
-app.post("/sell-stock", async (req, res) => {
+app.post("/api/sell-stock", async (req, res) => {
   try {
     console.log("REQ BODY:", req.body);
     const { user, currency, stock, stockAmount, price } = req.body;

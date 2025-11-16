@@ -3,8 +3,6 @@ import { Network } from "@aptos-labs/ts-sdk";
 import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip, CircularProgress } from "@mui/material";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import WalletButton from "./components/Wallet";
-import BalanceModal from "./components/BalanceModal";
-import BuyStockModal from "./components/BuyStockModal";
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
@@ -23,25 +21,12 @@ const stocks = [
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
 
-
-const handleExchange = async () => {
-  try {
-    const response = await axios.get('/api/exchange');
-    console.log(response.data);
-  } catch (error) {
-    console.error(error);
-  }
-};
-
-
 // Main content component that uses the wallet
 function MainContent() {
   const { account, connected } = useWallet();
   const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("USD");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
-  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
   const [balanceCurrency, setBalanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
-  const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
   const [exchangeRates] = useState({ INR: 83.5, USD: 1.0, CNY: 7.2, EUR: 0.92 });
   
   // Balance states
@@ -56,6 +41,69 @@ function MainContent() {
   const [intradayData, setIntradayData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Handle exchange function
+  const handleExchange = async () => {
+    if (!connected || !account?.address) {
+      alert("Please connect your wallet first!");
+      return;
+    }
+
+    const currentQuote = stockQuotes[selectedStock.symbol];
+    const currentStockPrice = currentQuote?.price || 0;
+
+    if (!currentStockPrice || currentStockPrice === 0) {
+      alert("Stock price not available. Please try again.");
+      return;
+    }
+
+    const currentBalance = getCurrentBalance();
+    if (currentBalance <= 0) {
+      alert(`You don't have enough ${selectedCurrency} to buy stocks!`);
+      return;
+    }
+
+    const canBuy = currentStockPrice > 0 ? Math.floor(currentBalance / currentStockPrice) : 0;
+    if (canBuy <= 0) {
+      alert(`Insufficient balance to buy ${selectedStock.symbol}`);
+      return;
+    }
+
+    try {
+      console.log("Starting exchange...");
+      
+      const currencyAmountInSmallestUnit = Math.floor(currentStockPrice * Math.pow(10, 6));
+      const priceInSmallestUnit = Math.floor(currentStockPrice * Math.pow(10, 6));
+
+      const payload = {
+        user: account.address.toString(),
+        currency: selectedCurrency === "USD" ? "APT" : selectedCurrency,
+        stock: selectedStock.symbol,
+        currencyAmount: currencyAmountInSmallestUnit,
+        price: priceInSmallestUnit,
+      };
+
+      console.log("Sending buy request:", payload);
+
+      const response = await axios.post('http://localhost:3001/api/buy-stock', payload, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log("Buy response:", response.data);
+
+      if (response.data.success) {
+        alert(`Successfully bought ${selectedStock.symbol}! Transaction hash: ${response.data.tx.hash}`);
+        window.location.reload();
+      } else {
+        alert(`Failed to buy stock: ${response.data.error || "Unknown error"}`);
+      }
+    } catch (error: any) {
+      console.error("Exchange error:", error);
+      alert(`Error buying stock: ${error.response?.data?.error || error.message || "Unknown error"}`);
+    }
+  };
 
   // Debug logs
   useEffect(() => {
@@ -418,12 +466,6 @@ function MainContent() {
           </Grid>
         </Grid>
       </Container>
-      <BalanceModal 
-        open={balanceModalOpen} 
-        onClose={() => setBalanceModalOpen(false)} 
-        currency={balanceCurrency}
-      />
-      <BuyStockModal open={buyStockModalOpen} onClose={() => setBuyStockModalOpen(false)} />
     </Box>
   );
 }
