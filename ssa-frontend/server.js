@@ -1,5 +1,5 @@
 import express from 'express';
-
+import exchangeRoutes from "./server-utils/exchangeRoutes.js";
 const app = express();
 const PORT = 3001; // or any other port you prefer
 
@@ -18,7 +18,6 @@ app.get('/api/exchange-coins', (req, res) => {
   return res.json({ message: 'Youve hit the Exchange coins endpoint'});
 });
 
-const exchangeRoutes = require("./server-utils/exchangeRoutes");
 app.use("/", exchangeRoutes);
 
 app.listen(PORT, () => {
