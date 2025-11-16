@@ -1,13 +1,14 @@
-// aptosClient.js
-require("dotenv").config();
-
-const {
+// server-utils/aptosClient.js
+import dotenv from "dotenv";
+import {
   Aptos,
   AptosConfig,
   Network,
   Account,
   Ed25519PrivateKey,
-} = require("@aptos-labs/ts-sdk");
+} from "@aptos-labs/ts-sdk";
+
+dotenv.config();
 
 const PRIVATE_KEY = process.env.ADMIN_PRIVATE_KEY;
 if (!PRIVATE_KEY) {
@@ -36,4 +37,4 @@ const adminAccount = Account.fromPrivateKey({ privateKey });
 
 console.log("Admin address:", adminAccount.accountAddress.toString());
 
-module.exports = { aptos, adminAccount };
+export { aptos, adminAccount };

@@ -1,12 +1,12 @@
 // server.js
-require("dotenv").config();
-const express = require("express");
-const cors = require("cors");
-const { buyStock, sellStock } = require("./exchangeService");
+import dotenv from "dotenv";
+import express from "express";
+import cors from "cors";
+import { buyStock, sellStock } from "./server-utils/exchangeService.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-
+dotenv.config();
 // ============================================
 // MIDDLEWARE
 // ============================================

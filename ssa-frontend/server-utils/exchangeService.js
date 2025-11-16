@@ -1,5 +1,5 @@
-// exchangeService.js
-const { aptos, adminAccount } = require("./aptosClient");
+// server-utils/exchangeService.js
+import { aptos, adminAccount } from "./aptosClient.js";
 
 const rawModuleAddr = process.env.MODULE_ADDR;
 if (!rawModuleAddr) {
@@ -13,7 +13,7 @@ const MODULE_ADDR = rawModuleAddr.startsWith("0x")
 
 const MODULE = `${MODULE_ADDR}::ExchangeV2`;
 
-async function buyStock(user, currency, stock, currencyAmount, price) {
+export async function buyStock(user, currency, stock, currencyAmount, price) {
   console.log("DEBUG BUY ARGS:", {
     user,
     currency,
@@ -55,7 +55,7 @@ async function buyStock(user, currency, stock, currencyAmount, price) {
   return aptos.waitForTransaction({ transactionHash: pending.hash });
 }
 
-async function sellStock(user, currency, stock, stockAmount, price) {
+export async function sellStock(user, currency, stock, stockAmount, price) {
   console.log("DEBUG SELL ARGS:", {
     user,
     currency,
@@ -95,5 +95,3 @@ async function sellStock(user, currency, stock, stockAmount, price) {
   // 4) Wait
   return aptos.waitForTransaction({ transactionHash: pending.hash });
 }
-
-module.exports = { buyStock, sellStock };
