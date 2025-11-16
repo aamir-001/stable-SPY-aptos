@@ -58,6 +58,43 @@ stable-SPY-aptos/
 
 ## 🚀 Getting Started
 
+## Installation
+
+To install the dependencies, run:
+```bash
+npm install
+```
+
+## Running the application
+
+To start the frontend server, run:
+```bash
+npm run dev
+```
+Open `http://localhost:3000` in your browser to view the application.
+
+## Running the backend server
+
+To start the Express.js backend server, run:
+```bash
+node server.ts
+```
+Make sure to update your Vite configuration file (`vite.config.ts`) to include the following settings:
+```typescript
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  // ... other configurations ...
+  server: {
+    host: '0.0.0.0',
+    port: parseInt(process.env.VITE_DEV_SERVER_PORT),
+    proxy: {
+      '/api': 'http://localhost:3001', // adjust the path and backend URL as needed
+    },
+  },
+});
+```
+
 ### 1. Clone the Repository
 
 ```bash
