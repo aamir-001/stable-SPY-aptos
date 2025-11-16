@@ -13,6 +13,7 @@ import { getAccountAPTBalance } from "./utils/getAccountBalance";
 import { getINRBalance } from "./utils/getINRBalance";
 import { getCNYBalance } from "./utils/getCNYBalance";
 import { getEURBalance } from "./utils/getEURBalance";
+import axios from "axios";
 
 const stocks = [
   { name: "Google", symbol: "GOOGC", alphaSymbol: "GOOGL" },
@@ -21,6 +22,17 @@ const stocks = [
   { name: "NVIDIA", symbol: "NVDA", alphaSymbol: "NVDA" },
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
+
+
+const handleExchange = async () => {
+  try {
+    const response = await axios.get('/api/exchange');
+    console.log(response.data);
+  } catch (error) {
+    console.error(error);
+  }
+};
+
 
 // Main content component that uses the wallet
 function MainContent() {
@@ -388,7 +400,7 @@ function MainContent() {
                 <Button
                   variant="contained"
                   fullWidth
-                  onClick={() => setBuyStockModalOpen(true)}
+                  onClick={() => handleExchange()}
                   sx={{
                     bgcolor: "#00C853",
                     color: "#ffffff",
