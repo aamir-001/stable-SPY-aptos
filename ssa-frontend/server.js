@@ -18,6 +18,9 @@ app.get('/api/exchange-coins', (req, res) => {
   return res.json({ message: 'Youve hit the Exchange coins endpoint'});
 });
 
+const exchangeRoutes = require("./server-utils/exchangeRoutes");
+app.use("/", exchangeRoutes);
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
