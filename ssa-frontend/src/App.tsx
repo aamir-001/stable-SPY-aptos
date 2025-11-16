@@ -1,14 +1,18 @@
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
-import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip } from "@mui/material";
+import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip, CircularProgress } from "@mui/material";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import WalletButton from "./components/Wallet";
 import BalanceModal from "./components/BalanceModal";
-import INRModal from "./components/INRModal";
 import BuyStockModal from "./components/BuyStockModal";
 import { useState, useEffect } from "react";
+import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
 import type { StockQuote, StockData } from "./services/stockApi";
+import { getAccountAPTBalance } from "./utils/getAccountBalance";
+import { getINRBalance } from "./utils/getINRBalance";
+import { getCNYBalance } from "./utils/getCNYBalance";
+import { getEURBalance } from "./utils/getEURBalance";
 
 const stocks = [
   { name: "Google", symbol: "GOOGC", alphaSymbol: "GOOGL" },
@@ -19,13 +23,20 @@ const stocks = [
 ];
 
 export default function App() {
-  const [aptBalance] = useState(1000);
-  const [selectedCurrency, setSelectedCurrency] = useState("USD");
+  const { account } = useWallet();
+  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("USD");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
-  const [inrModalOpen, setInrModalOpen] = useState(false);
+  const [balanceCurrency, setBalanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
   const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
   const [exchangeRates] = useState({ INR: 83.5, USD: 1.0, CNY: 7.2, EUR: 0.92 });
+  
+  // Balance states
+  const [aptBalance, setAptBalance] = useState<number | null>(null);
+  const [inrBalance, setInrBalance] = useState<number | null>(null);
+  const [cnyBalance, setCnyBalance] = useState<number | null>(null);
+  const [eurBalance, setEurBalance] = useState<number | null>(null);
+  const [loadingBalances, setLoadingBalances] = useState(false);
   
   // Stock data states
   const [stockQuotes, setStockQuotes] = useState<Record<string, StockQuote>>({});
@@ -72,10 +83,63 @@ export default function App() {
     loadIntradayData();
   }, [selectedStock]);
 
+  // Load balances when wallet connects or currency changes
+  useEffect(() => {
+    const loadBalances = async () => {
+      if (!account?.address) {
+        setAptBalance(null);
+        setInrBalance(null);
+        setCnyBalance(null);
+        setEurBalance(null);
+        return;
+      }
+
+      setLoadingBalances(true);
+      try {
+        // Load all balances in parallel
+        const [apt, inr, cny, eur] = await Promise.all([
+          getAccountAPTBalance({ accountAddress: account.address.toString() }).catch(() => 0),
+          getINRBalance({ accountAddress: account.address.toString() }).catch(() => 0),
+          getCNYBalance({ accountAddress: account.address.toString() }).catch(() => 0),
+          getEURBalance({ accountAddress: account.address.toString() }).catch(() => 0),
+        ]);
+
+        setAptBalance(apt / 100000000); // Convert from octas to APT
+        setInrBalance(inr / Math.pow(10, 6)); // Convert from smallest unit to INR
+        setCnyBalance(cny / Math.pow(10, 6)); // Convert from smallest unit to CNY
+        setEurBalance(eur / Math.pow(10, 6)); // Convert from smallest unit to EUR
+      } catch (error) {
+        console.error("Error loading balances:", error);
+      } finally {
+        setLoadingBalances(false);
+      }
+    };
+
+    loadBalances();
+    // Refresh balances every 30 seconds
+    const interval = setInterval(loadBalances, 30000);
+    return () => clearInterval(interval);
+  }, [account?.address]);
+
   const currentQuote = stockQuotes[selectedStock.symbol];
   const currentStockPrice = currentQuote?.price || 0;
-  const currencyValue = aptBalance * exchangeRates[selectedCurrency as keyof typeof exchangeRates];
-  const canBuy = currentStockPrice > 0 ? Math.floor(currencyValue / currentStockPrice) : 0;
+  
+  // Get the actual balance for selected currency
+  const getCurrentBalance = (): number => {
+    if (selectedCurrency === "USD") {
+      return aptBalance ? aptBalance * exchangeRates.USD : 0;
+    } else if (selectedCurrency === "INR") {
+      return inrBalance || 0;
+    } else if (selectedCurrency === "CNY") {
+      return cnyBalance || 0;
+    } else if (selectedCurrency === "EUR") {
+      return eurBalance || 0;
+    }
+    return 0;
+  };
+
+  const currentBalance = getCurrentBalance();
+  const canBuy = currentStockPrice > 0 ? Math.floor(currentBalance / currentStockPrice) : 0;
 
   // Format chart data
   const chartData = intradayData.map((point) => ({
@@ -88,8 +152,8 @@ export default function App() {
       <Box sx={{ minHeight: "100vh", bgcolor: "#ffffff", py: 3 }}>
         <WalletButton />
         <Container maxWidth="xl">
-          <Typography variant="h4" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-            Stable SPY Aptos
+          <Typography variant="h3" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
+            TABDEEL
           </Typography>
 
           {/* Stock Prices - Front and Center */}
@@ -212,85 +276,45 @@ export default function App() {
               <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
                 <CardContent sx={{ p: 3 }}>
                   <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    Currency Exchange
+                    Buying Power
                   </Typography>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
-                    <Typography variant="body1" sx={{ color: "#666666", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>
-                      APT Balance: {aptBalance.toFixed(2)}
-                    </Typography>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      onClick={() => setBalanceModalOpen(true)}
-                      sx={{
-                        borderColor: "#00C853",
-                        color: "#00C853",
-                        textTransform: "none",
-                        fontWeight: 500,
-                        fontFamily: "'Inter', sans-serif",
-                        "&:hover": { borderColor: "#00A043", bgcolor: "rgba(0, 200, 83, 0.05)" },
-                      }}
-                    >
-                      View Balance
-                    </Button>
-                  </Box>
-                  <Button
-                    variant="outlined"
-                    fullWidth
-                    onClick={() => setInrModalOpen(true)}
-                    sx={{
-                      mb: 2,
-                      borderColor: "#00C853",
-                      color: "#00C853",
-                      textTransform: "none",
-                      fontWeight: 500,
-                      fontFamily: "'Inter', sans-serif",
-                      "&:hover": { borderColor: "#00A043", bgcolor: "rgba(0, 200, 83, 0.05)" },
-                    }}
-                  >
-                    Manage INR Coin
-                  </Button>
-                  <FormControl fullWidth sx={{ mb: 2 }}>
+                  
+                  <FormControl fullWidth sx={{ mb: 3 }}>
                     <InputLabel sx={{ color: "#666666" }}>Select Currency</InputLabel>
                     <Select
                       value={selectedCurrency}
-                      onChange={(e) => setSelectedCurrency(e.target.value)}
+                      onChange={(e) => {
+                        const newCurrency = e.target.value as "USD" | "INR" | "CNY" | "EUR";
+                        setSelectedCurrency(newCurrency);
+                        // Map currency to balance currency for modal
+                        if (newCurrency === "USD") {
+                          setBalanceCurrency("APT");
+                        } else {
+                          setBalanceCurrency(newCurrency);
+                        }
+                      }}
                       sx={{
                         color: "#000000",
                         "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
                         "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
                       }}
                     >
-                      <MenuItem value="USD">USD</MenuItem>
+                      <MenuItem value="USD">USD (APT)</MenuItem>
                       <MenuItem value="INR">INR</MenuItem>
                       <MenuItem value="CNY">CNY</MenuItem>
                       <MenuItem value="EUR">EUR</MenuItem>
                     </Select>
                   </FormControl>
-                  <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, mb: 2, fontFamily: "'Inter', sans-serif" }}>
-                    {currencyValue.toFixed(2)} {selectedCurrency}
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => {
-                      if (selectedCurrency === "INR") {
-                        setInrModalOpen(true);
-                      }
-                    }}
-                    sx={{
-                      mt: 1,
-                      bgcolor: "#00C853",
-                      color: "#ffffff",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontFamily: "'Inter', sans-serif",
-                      py: 1.5,
-                      "&:hover": { bgcolor: "#00A043" },
-                    }}
-                  >
-                    {selectedCurrency === "INR" ? "Manage INR" : `Purchase ${selectedCurrency}`}
-                  </Button>
+
+                  {loadingBalances ? (
+                    <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+                      <CircularProgress size={24} sx={{ color: "#00C853" }} />
+                    </Box>
+                  ) : (
+                    <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
+                      {currentBalance.toFixed(selectedCurrency === "USD" ? 4 : 6)} {selectedCurrency}
+                    </Typography>
+                  )}
                 </CardContent>
               </Card>
             </Grid>
@@ -336,8 +360,11 @@ export default function App() {
             </Grid>
           </Grid>
         </Container>
-        <BalanceModal open={balanceModalOpen} onClose={() => setBalanceModalOpen(false)} />
-        <INRModal open={inrModalOpen} onClose={() => setInrModalOpen(false)} />
+        <BalanceModal 
+          open={balanceModalOpen} 
+          onClose={() => setBalanceModalOpen(false)} 
+          currency={balanceCurrency}
+        />
         <BuyStockModal open={buyStockModalOpen} onClose={() => setBuyStockModalOpen(false)} />
       </Box>
     </AptosWalletAdapterProvider>
