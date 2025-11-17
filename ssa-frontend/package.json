@@ -14,6 +14,7 @@
     "@aptos-labs/wallet-adapter-react": "^7.2.2",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^7.3.5",
     "@mui/material": "^7.3.5",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",

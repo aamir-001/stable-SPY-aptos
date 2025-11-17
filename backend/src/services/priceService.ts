@@ -39,10 +39,16 @@ export async function getStockPriceInINR(stock: string): Promise<number> {
       
       if (regularMarketPrice) {
         const usdPrice = regularMarketPrice;
-        const inrPriceScaled = Math.floor(usdPrice * USD_TO_INR * 1_000_000);
-        
-        console.log(`[PRICE YAHOO] ${normalized}: $${usdPrice.toFixed(2)} = ₹${(inrPriceScaled / 1_000_000).toFixed(2)}`);
-        
+        // Price for 1 whole stock in INR (not scaled)
+        const inrPrice = usdPrice * USD_TO_INR;
+        // Price for 1 microunit of stock in microunits of INR
+        // 1 whole stock = 1,000,000 microunits
+        // So price per microunit = inrPrice (in microunits)
+        const inrPriceScaled = Math.floor(inrPrice * 1_000_000);
+
+        console.log(`[PRICE YAHOO] ${normalized}: $${usdPrice.toFixed(2)} = ₹${inrPrice.toFixed(2)} per stock`);
+        console.log(`[PRICE YAHOO] Price in microunits: ${inrPriceScaled}`);
+
         return inrPriceScaled;
       }
     }
@@ -54,10 +60,12 @@ export async function getStockPriceInINR(stock: string): Promise<number> {
 
   // Fallback to hardcoded price
   const usdPrice = HARDCODED_USD_PRICES[normalized];
-  const inrPriceScaled = Math.floor(usdPrice * USD_TO_INR * 1_000_000);
-  
-  console.log(`[PRICE HARDCODED] ${normalized}: $${usdPrice.toFixed(2)} = ₹${(inrPriceScaled / 1_000_000).toFixed(2)}`);
-  
+  const inrPrice = usdPrice * USD_TO_INR;
+  const inrPriceScaled = Math.floor(inrPrice * 1_000_000);
+
+  console.log(`[PRICE HARDCODED] ${normalized}: $${usdPrice.toFixed(2)} = ₹${inrPrice.toFixed(2)} per stock`);
+  console.log(`[PRICE HARDCODED] Price in microunits: ${inrPriceScaled}`);
+
   return inrPriceScaled;
 }
 

@@ -1,13 +1,13 @@
 // Stock API service using Yahoo Finance (free, no API key required)
 // Using CORS proxy to bypass browser CORS restrictions
 
-// Map our symbols to Yahoo Finance symbols
+// Map our symbols to Yahoo Finance symbols (matching backend)
 const SYMBOL_MAP: Record<string, string> = {
-  GOOGC: "GOOGL", // Google
-  APPL: "AAPL",   // Apple
-  TSLA: "TSLA",   // Tesla
-  NVDA: "NVDA",   // NVIDIA
-  HOOD: "HOOD",   // Robinhood
+  GOOG: "GOOGL", // Google (use GOOGL for Yahoo Finance)
+  AAPL: "AAPL",  // Apple
+  TSLA: "TSLA",  // Tesla
+  NVDA: "NVDA",  // NVIDIA
+  HOOD: "HOOD",  // Robinhood
 };
 
 // CORS proxy (you can use your own backend proxy in production)
@@ -69,14 +69,14 @@ export const stockApi = {
     }
   },
 
-  // Fallback quote data (mock data when API fails)
+  // Fallback quote data (matching backend hardcoded prices)
   getFallbackQuote(symbol: string): StockQuote | null {
     const fallbackPrices: Record<string, { price: number; change: number }> = {
-      GOOGC: { price: 150.50, change: 2.30 },
-      APPL: { price: 175.20, change: -1.50 },
-      TSLA: { price: 250.80, change: 5.20 },
-      NVDA: { price: 480.30, change: 12.50 },
-      HOOD: { price: 12.50, change: 0.30 },
+      GOOG: { price: 165.50, change: 2.30 },
+      AAPL: { price: 225.00, change: -1.50 },
+      TSLA: { price: 350.75, change: 5.20 },
+      NVDA: { price: 140.25, change: 12.50 },
+      HOOD: { price: 28.50, change: 0.30 },
     };
 
     const fallback = fallbackPrices[symbol];

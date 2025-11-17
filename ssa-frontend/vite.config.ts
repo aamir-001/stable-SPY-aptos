@@ -8,7 +8,11 @@ export default defineConfig({
     host: '0.0.0.0',
     port: parseInt(process.env.VITE_DEV_SERVER_PORT || '3000'),
     proxy: {
-      '/api': 'http://localhost:3001', // adjust the path and backend URL as needed
+      '/api': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, ''),
+      },
     },
   },
 })

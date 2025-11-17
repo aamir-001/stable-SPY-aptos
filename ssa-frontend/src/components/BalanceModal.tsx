@@ -2,9 +2,7 @@ import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { Dialog, DialogContent, Typography, Box, CircularProgress } from "@mui/material";
 import { getAccountAPTBalance } from "../utils/getAccountBalance";
-import { getINRBalance } from "../utils/getINRBalance";
-import { getCNYBalance } from "../utils/getCNYBalance";
-import { getEURBalance } from "../utils/getEURBalance";
+import { backendApi } from "../services/backendApi";
 
 interface BalanceModalProps {
   open: boolean;
@@ -26,21 +24,14 @@ export default function BalanceModal({ open, onClose, currency }: BalanceModalPr
       const fetchBalance = async () => {
         try {
           let bal: number;
-          
+
           if (currency === "APT") {
             bal = await getAccountAPTBalance({ accountAddress: account.address.toString() });
             setBalance(bal / 100000000); // Convert from octas to APT
-          } else if (currency === "INR") {
-            bal = await getINRBalance({ accountAddress: account.address.toString() });
-            setBalance(bal / Math.pow(10, 6)); // Convert from smallest unit (6 decimals) to INR
-          } else if (currency === "CNY") {
-            bal = await getCNYBalance({ accountAddress: account.address.toString() });
-            setBalance(bal / Math.pow(10, 6)); // Convert from smallest unit (6 decimals) to CNY
-          } else if (currency === "EUR") {
-            bal = await getEURBalance({ accountAddress: account.address.toString() });
-            setBalance(bal / Math.pow(10, 6)); // Convert from smallest unit (6 decimals) to EUR
           } else {
-            setBalance(0);
+            // Use backend API for currency balances (INR, CNY, EUR)
+            bal = await backendApi.getCurrencyBalance(currency as 'INR' | 'EUR' | 'CNY', account.address.toString());
+            setBalance(bal);
           }
         } catch (err: any) {
           setError(err.message || "Failed to fetch balance");
