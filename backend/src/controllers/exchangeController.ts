@@ -5,10 +5,14 @@ export const buyStock = async (req: Request, res: Response) => {
   try {
     const { userAddress, stock, amount } = req.body;
 
-    // amount is INR → backend scales to 1e6
-    const currencyAmount = amount * 1_000_000;
+    if (!userAddress || !stock || !amount) {
+      return res.status(400).json({
+        error: "Missing required fields: userAddress, stock, amount"
+      });
+    }
 
-    const result = await buyStockService(userAddress, stock, currencyAmount);
+    // amount is already in INR (NOT scaled) - service will scale it
+    const result = await buyStockService(userAddress, stock, amount);
 
     res.json({
       success: true,
@@ -23,7 +27,13 @@ export const sellStock = async (req: Request, res: Response) => {
   try {
     const { userAddress, stock, amount } = req.body;
 
-    // amount already in stock tokens (u64)
+    if (!userAddress || !stock || !amount) {
+      return res.status(400).json({
+        error: "Missing required fields: userAddress, stock, amount"
+      });
+    }
+
+    // amount is in stock tokens (u64)
     const result = await sellStockService(userAddress, stock, amount);
 
     res.json({

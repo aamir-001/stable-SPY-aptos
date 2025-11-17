@@ -10,8 +10,7 @@ module my_addr::TSLACoin {
     use std::option;
 
     const E_NOT_ADMIN: u64 = 1;
-    const E_ALREADY_INITIALIZED: u64 = 2;
-    const ASSET_SYMBOL: vector<u8> = b"TSLAC";
+    const ASSET_SYMBOL: vector<u8> = b"TSLA";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -30,7 +29,7 @@ module my_addr::TSLACoin {
             utf8(b"Tesla Stock Token"),
             utf8(ASSET_SYMBOL),
             6,
-            utf8(b"https://example.com/tesla-icon.png"),
+            utf8(b"https://example.com/tsla-icon.png"),
             utf8(b"https://example.com"),
         );
 
@@ -41,18 +40,13 @@ module my_addr::TSLACoin {
         let metadata_signer = object::generate_signer(constructor_ref);
         move_to(
             &metadata_signer,
-            ManagedFungibleAsset { mint_ref, transfer_ref, burn_ref, admin: signer::address_of(admin) }
+            ManagedFungibleAsset {
+                mint_ref,
+                transfer_ref,
+                burn_ref,
+                admin: signer::address_of(admin),
+            }
         );
-    }
-
-    public entry fun initialize(admin: &signer) {
-        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
-        assert!(
-            !object::object_exists<Metadata>(metadata_address),
-            error::already_exists(E_ALREADY_INITIALIZED)
-        );
-
-        init_module(admin);
     }
 
     #[view]
@@ -67,31 +61,43 @@ module my_addr::TSLACoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    public entry fun mint_stock_token(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun mint_coins(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    public entry fun burn_stock_token(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun burn_coins(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
         let from_store = primary_fungible_store::primary_store(from, asset);
-        let fa = fungible_asset::withdraw_with_ref(&managed.transfer_ref, from_store, amount);
+        let fa = fungible_asset::withdraw_with_ref(
+            &managed.transfer_ref,
+            from_store,
+            amount,
+        );
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    public entry fun transfer_stock_token(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun transfer_coins(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
         let from_store = primary_fungible_store::primary_store(from, asset);
-        let fa = fungible_asset::withdraw_with_ref(&managed.transfer_ref, from_store, amount);
+        let fa = fungible_asset::withdraw_with_ref(
+            &managed.transfer_ref,
+            from_store,
+            amount,
+        );
 
         let to_store = primary_fungible_store::ensure_primary_store_exists(to, asset);
-        fungible_asset::deposit_with_ref(&managed.transfer_ref, to_store, fa);
+        fungible_asset::deposit_with_ref(
+            &managed.transfer_ref,
+            to_store,
+            fa,
+        );
     }
 
     inline fun ensure_admin_and_borrow(
@@ -105,5 +111,12 @@ module my_addr::TSLACoin {
             error::permission_denied(E_NOT_ADMIN)
         );
         managed
+    }
+
+    public entry fun initialize(admin: &signer) {
+        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
+        assert!(!object::object_exists<Metadata>(metadata_address), 1);
+        
+        init_module(admin);
     }
 }

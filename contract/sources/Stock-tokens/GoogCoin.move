@@ -1,4 +1,4 @@
-module my_addr::GoogleCoin {
+module my_addr::GOOGCoin {
     use aptos_framework::fungible_asset::{
         Self, MintRef, TransferRef, BurnRef, Metadata, FungibleAsset
     };
@@ -10,8 +10,7 @@ module my_addr::GoogleCoin {
     use std::option;
 
     const E_NOT_ADMIN: u64 = 1;
-    const E_ALREADY_INITIALIZED: u64 = 2;
-    const ASSET_SYMBOL: vector<u8> = b"GOOGC";
+    const ASSET_SYMBOL: vector<u8> = b"GOOG";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -21,7 +20,6 @@ module my_addr::GoogleCoin {
         admin: address,
     }
 
-    /// Initialize the GoogleCoin metadata and capability refs (run once on first publish)
     fun init_module(admin: &signer) {
         let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
 
@@ -30,43 +28,8 @@ module my_addr::GoogleCoin {
             option::none(),
             utf8(b"Google Stock Token"),
             utf8(ASSET_SYMBOL),
-            6,  // Same decimals as INRCoin for easier math
-            utf8(b"https://example.com/google-icon.png"),
-            utf8(b"https://example.com"),
-        );
-
-        let mint_ref = fungible_asset::generate_mint_ref(constructor_ref);
-        let transfer_ref = fungible_asset::generate_transfer_ref(constructor_ref);
-        let burn_ref = fungible_asset::generate_burn_ref(constructor_ref);
-
-        let metadata_signer = object::generate_signer(constructor_ref);
-        move_to(
-            &metadata_signer,
-            ManagedFungibleAsset {
-                mint_ref,
-                transfer_ref,
-                burn_ref,
-                admin: signer::address_of(admin),
-            }
-        );
-    }
-
-    /// Public initialize function - call this manually if needed
-    public entry fun initialize(admin: &signer) {
-        // Check if already initialized
-        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
-        assert!(!object::object_exists<Metadata>(metadata_address), error::already_exists(E_ALREADY_INITIALIZED));
-        
-        // Create the object and metadata
-        let constructor_ref = &object::create_named_object(admin, ASSET_SYMBOL);
-
-        primary_fungible_store::create_primary_store_enabled_fungible_asset(
-            constructor_ref,
-            option::none(),
-            utf8(b"Google Stock Token"),
-            utf8(ASSET_SYMBOL),
             6,
-            utf8(b"https://example.com/google-icon.png"),
+            utf8(b"https://example.com/goog-icon.png"),
             utf8(b"https://example.com"),
         );
 
@@ -98,14 +61,14 @@ module my_addr::GoogleCoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    public entry fun mint_stock_token(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun mint_coins(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    public entry fun burn_stock_token(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun burn_coins(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -118,7 +81,7 @@ module my_addr::GoogleCoin {
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    public entry fun transfer_stock_token(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun transfer_coins(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -148,5 +111,12 @@ module my_addr::GoogleCoin {
             error::permission_denied(E_NOT_ADMIN)
         );
         managed
+    }
+
+    public entry fun initialize(admin: &signer) {
+        let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
+        assert!(!object::object_exists<Metadata>(metadata_address), 1);
+        
+        init_module(admin);
     }
 }

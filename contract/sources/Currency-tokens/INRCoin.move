@@ -10,7 +10,7 @@ module my_addr::INRCoin {
     use std::option;
 
     const E_NOT_ADMIN: u64 = 1;
-    const ASSET_SYMBOL: vector<u8> = b"inrc";
+    const ASSET_SYMBOL: vector<u8> = b"INR";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -27,10 +27,10 @@ module my_addr::INRCoin {
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
             option::none(),
-            utf8(b"INRCoin"),
+            utf8(b"Indian Rupee Coin"),
             utf8(ASSET_SYMBOL),
             6,
-            utf8(b"https://example.com/icon.png"),
+            utf8(b"https://example.com/inr-icon.png"),
             utf8(b"https://example.com"),
         );
 
@@ -62,14 +62,16 @@ module my_addr::INRCoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    public entry fun mint_inrc(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+    /// Generic mint function - works for any coin module
+    public entry fun mint_coins(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    public entry fun burn_inrc(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+    /// Generic burn function - works for any coin module
+    public entry fun burn_coins(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -82,7 +84,8 @@ module my_addr::INRCoin {
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    public entry fun transfer_inrc(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
+    /// Generic transfer function - works for any coin module
+    public entry fun transfer_coins(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -116,12 +119,9 @@ module my_addr::INRCoin {
 
     /// Public initialize function (call manually if init_module didn't run)
     public entry fun initialize(admin: &signer) {
-        // Check if already initialized
         let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
         assert!(!object::object_exists<Metadata>(metadata_address), 1);
         
         init_module(admin);
     }
-
-
 }
