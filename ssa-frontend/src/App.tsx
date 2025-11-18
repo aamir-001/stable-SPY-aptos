@@ -8,6 +8,7 @@ import BuyStockModal from "./components/BuyStockModal";
 import SellStockModal from "./components/SellStockModal";
 import CurrencyHeader from "./components/CurrencyHeader";
 import MintCurrencyModal from "./components/MintCurrencyModal";
+import PortfolioView from "./components/PortfolioView";
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
@@ -24,9 +25,6 @@ const stocks = [
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
 
-
-
-
 // Main content component that uses the wallet
 function MainContent() {
   const { account, connected } = useWallet();
@@ -37,6 +35,7 @@ function MainContent() {
   const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
   const [sellStockModalOpen, setSellStockModalOpen] = useState(false);
   const [mintModalOpen, setMintModalOpen] = useState(false);
+  
   // Hardcoded exchange rates (1 USD = ...)
   const exchangeRates = { USD: 1.0, INR: 90.0, CNY: 7.2, EUR: 0.92 };
 
@@ -56,6 +55,9 @@ function MainContent() {
   const [intradayData, setIntradayData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Portfolio holdings state
+  const [portfolioHoldings, setPortfolioHoldings] = useState<any[]>([]);
 
   // Debug logs
   useEffect(() => {
@@ -187,6 +189,60 @@ function MainContent() {
     return () => clearInterval(interval);
   }, [connected, account?.address, selectedStock.symbol]);
 
+  // Load portfolio holdings
+  useEffect(() => {
+    const loadPortfolioHoldings = async () => {
+      if (!connected || !account?.address) {
+        setPortfolioHoldings([]);
+        return;
+      }
+
+      try {
+        const holdingsData = await Promise.all(
+          stocks.map(async (stock) => {
+            const balance = await backendApi.getStockBalance(
+              stock.symbol, 
+              account.address.toString()
+            ).catch(() => 0);
+            
+            const quote = stockQuotes[stock.symbol];
+            
+            return {
+              symbol: stock.symbol,
+              name: stock.name,
+              alphaSymbol: stock.alphaSymbol,
+              balance: balance,
+              currentPrice: quote?.price || 0,
+              value: balance * (quote?.price || 0),
+              change: quote?.change,
+              changePercent: quote?.changePercent,
+            };
+          })
+        );
+        
+        setPortfolioHoldings(holdingsData);
+      } catch (error) {
+        console.error('Error loading portfolio:', error);
+      }
+    };
+
+    loadPortfolioHoldings();
+    
+    // Refresh portfolio every 10 seconds
+    const interval = setInterval(loadPortfolioHoldings, 10000);
+    return () => clearInterval(interval);
+  }, [connected, account?.address, stockQuotes]);
+
+  // Handle stock click from portfolio
+  const handleStockClick = (stockSymbol: string) => {
+    const stock = stocks.find(s => s.symbol === stockSymbol);
+    if (stock) {
+      setSelectedStock(stock);
+      // Scroll to top to see the chart
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
   const currentQuote = stockQuotes[selectedStock.symbol];
   const currentStockPrice = currentQuote?.price || 0;
   
@@ -268,14 +324,14 @@ function MainContent() {
           TABDEEL
         </Typography>
 
-        {/* Stock Prices - Front and Center */}
+        {/* Stock Prices Chart - Top Section */}
         <Grid container spacing={3} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12 }}>
             <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
                   <Typography variant="h5" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    Stock Prices
+                    {selectedStock.name} ({selectedStock.alphaSymbol})
                   </Typography>
                   <FormControl sx={{ minWidth: 200 }}>
                     <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
@@ -304,6 +360,7 @@ function MainContent() {
                     </Typography>
                   </Box>
                 )}
+                
                 {loading ? (
                   <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
                     <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>Loading stock data...</Typography>
@@ -329,9 +386,6 @@ function MainContent() {
                           }}
                         />
                       </Box>
-                      <Typography variant="h6" sx={{ color: "#666666", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>
-                        {selectedStock.name} ({currentQuote.symbol})
-                      </Typography>
                     </Box>
 
                     {chartData.length > 0 ? (
@@ -387,6 +441,22 @@ function MainContent() {
           </Grid>
         </Grid>
 
+        {/* Portfolio View - Below Chart */}
+        {connected && (
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 12 }}>
+              <PortfolioView
+                holdings={portfolioHoldings}
+                loading={loading || loadingBalances}
+                currency={selectedCurrency}
+                exchangeRates={exchangeRates}
+                onStockClick={handleStockClick}
+              />
+            </Grid>
+          </Grid>
+        )}
+
+        {/* Trade Stock Coins Section */}
         <Grid container spacing={3}>
           <Grid size={{ xs: 12 }}>
             <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
@@ -468,6 +538,7 @@ function MainContent() {
           </Grid>
         </Grid>
       </Container>
+
       <BalanceModal
         open={balanceModalOpen}
         onClose={() => setBalanceModalOpen(false)}
@@ -478,7 +549,6 @@ function MainContent() {
         onClose={() => setBuyStockModalOpen(false)}
         onBuySuccess={() => {
           handleBalanceUpdate();
-          // Reload stock balance immediately after buying
           if (account?.address) {
             backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
           }
@@ -491,7 +561,6 @@ function MainContent() {
         currentBalance={stockBalance}
         onSellSuccess={() => {
           handleBalanceUpdate();
-          // Reload stock balance after selling
           if (account?.address) {
             backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
           }
