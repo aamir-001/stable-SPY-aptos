@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import exchangeRoutes from "./routes/exchangeRoutes.js";
 import currencyRoutes from "./routes/currencyRoutes.js";
 import tokenRoutes from "./routes/tokenRoutes.js";
+import portfolioRoutes from "./routes/portfolioRoutes.js";
+import pool from "./db/database.js";
 
 dotenv.config();
 
@@ -20,14 +22,15 @@ app.use(express.json());
 
 // Health check endpoint
 app.get("/", (req, res) => {
-  res.json({ 
-    status: "OK", 
+  res.json({
+    status: "OK",
     message: "Stock Exchange API is running",
     version: "1.0.0",
     endpoints: {
       exchange: "/exchange - Buy/Sell stocks",
       currency: "/currency - Mint/Burn/Balance currencies (INR, EUR, CNY)",
-      token: "/token - Get token balances (stocks and currencies)"
+      token: "/token - Get token balances (stocks and currencies)",
+      portfolio: "/portfolio - Portfolio P&L tracking and transaction history"
     }
   });
 });
@@ -36,6 +39,7 @@ app.get("/", (req, res) => {
 app.use("/exchange", exchangeRoutes);
 app.use("/currency", currencyRoutes);
 app.use("/token", tokenRoutes);
+app.use("/portfolio", portfolioRoutes);
 
 const PORT = process.env.PORT || 3001;
 
@@ -44,6 +48,7 @@ const server = app.listen(PORT, () => {
   console.log(`📊 Exchange API: http://localhost:${PORT}/exchange`);
   console.log(`💰 Currency API: http://localhost:${PORT}/currency`);
   console.log(`🪙 Token API: http://localhost:${PORT}/token`);
+  console.log(`📈 Portfolio API: http://localhost:${PORT}/portfolio`);
   console.log(`✅ Server is ready to accept connections`);
 });
 

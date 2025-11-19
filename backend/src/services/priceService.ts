@@ -72,3 +72,51 @@ export async function getStockPriceInINR(stock: string): Promise<number> {
 export function getSupportedStocks(): string[] {
   return SUPPORTED_STOCKS;
 }
+
+/**
+ * Get stock price from Yahoo Finance in USD (for portfolio P&L calculations)
+ * @param stock - Stock symbol (e.g., "GOOG", "AAPL")
+ * @returns Price in USD (not scaled)
+ */
+export async function getStockPriceFromYahoo(stock: string): Promise<number> {
+  const normalized = stock.toUpperCase();
+
+  // Check if stock is supported
+  if (!SUPPORTED_STOCKS.includes(normalized)) {
+    throw new Error(`Unknown stock symbol: ${stock}. Supported: ${SUPPORTED_STOCKS.join(", ")}`);
+  }
+
+  // Try Yahoo Finance Chart API first
+  try {
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${normalized}?interval=1d&range=1d`;
+
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.chart?.result?.[0]) {
+      const result = data.chart.result[0];
+      const meta = result.meta;
+      const regularMarketPrice = meta.regularMarketPrice;
+
+      if (regularMarketPrice) {
+        console.log(`[PRICE YAHOO] ${normalized}: $${regularMarketPrice.toFixed(2)}`);
+        return regularMarketPrice;
+      }
+    }
+
+    throw new Error(`No price data found for ${normalized}`);
+  } catch (err: any) {
+    console.warn(`[PRICE] Yahoo Finance failed for ${normalized}, using fallback:`, err.message);
+  }
+
+  // Fallback to hardcoded price
+  const usdPrice = HARDCODED_USD_PRICES[normalized];
+  console.log(`[PRICE HARDCODED] ${normalized}: $${usdPrice.toFixed(2)}`);
+
+  return usdPrice;
+}

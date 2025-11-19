@@ -1,5 +1,6 @@
 import { aptos, signer } from "../aptosClient.js";
 import { getStockPriceInINR } from "./priceService.js";
+import { logBuyTransaction, logSellTransaction } from "./portfolioService.js";
 
 export async function buyStockService(
   userAddress: string,
@@ -60,13 +61,32 @@ export async function buyStockService(
 
   await aptos.waitForTransaction({ transactionHash: committed.hash });
 
+  const pricePerStock = priceInCurrency / 1_000_000;
+  const totalSpent = actualAmountToSpend / 1_000_000;
+
+  // Log transaction to database
+  try {
+    await logBuyTransaction({
+      walletAddress: userAddress,
+      stockSymbol: stock,
+      quantity: wholeStocksCount,
+      pricePerShare: pricePerStock,
+      totalValue: totalSpent,
+      baseCurrency: 'INR',
+      txHash: committed.hash,
+    });
+  } catch (error) {
+    console.error('Failed to log buy transaction to database:', error);
+    // Don't fail the whole operation if DB logging fails
+  }
+
   return {
     success: true,
     txHash: committed.hash,
     stockAmount: wholeStocksCount,
-    pricePerStock: priceInCurrency / 1_000_000,
-    totalSpent: actualAmountToSpend / 1_000_000,
-    change: currencyAmount - actualAmountToSpend / 1_000_000,
+    pricePerStock: pricePerStock,
+    totalSpent: totalSpent,
+    change: currencyAmount - totalSpent,
   };
 }
 
@@ -117,11 +137,30 @@ export async function sellStockService(
 
   await aptos.waitForTransaction({ transactionHash: committed.hash });
 
+  const pricePerStock = priceInCurrency / 1_000_000;
+  const totalReceived = currencyAmountScaled / 1_000_000;
+
+  // Log transaction to database
+  try {
+    await logSellTransaction({
+      walletAddress: userAddress,
+      stockSymbol: stock,
+      quantity: stockAmount,
+      pricePerShare: pricePerStock,
+      totalValue: totalReceived,
+      baseCurrency: 'INR',
+      txHash: committed.hash,
+    });
+  } catch (error) {
+    console.error('Failed to log sell transaction to database:', error);
+    // Don't fail the whole operation if DB logging fails
+  }
+
   return {
     success: true,
     txHash: committed.hash,
     stocksSold: stockAmount,
-    pricePerStock: priceInCurrency / 1_000_000,
-    totalReceived: currencyAmountScaled / 1_000_000,
+    pricePerStock: pricePerStock,
+    totalReceived: totalReceived,
   };
 }

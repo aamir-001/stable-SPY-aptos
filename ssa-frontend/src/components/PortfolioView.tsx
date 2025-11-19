@@ -1,15 +1,16 @@
-import { 
-  Card, 
-  CardContent, 
-  Typography, 
-  Box, 
-  List, 
-  ListItem, 
+import {
+  Card,
+  CardContent,
+  Typography,
+  Box,
+  List,
+  ListItem,
   Avatar,
   Skeleton,
   Chip
 } from '@mui/material'
 import { TrendingUp, TrendingDown } from '@mui/icons-material'
+import type { PortfolioPosition } from '../services/backendApi'
 
 // Stock icons mapping - you can replace these with actual stock logos
 const stockIcons = {
@@ -20,32 +21,35 @@ const stockIcons = {
   HOOD: '🏹', // Robinhood
 }
 
-interface StockHolding {
-  symbol: string
-  name: string
-  balance: number
-  currentPrice: number
-  value: number
-  change?: number
-  changePercent?: number
+const stockNames: Record<string, string> = {
+  GOOG: 'Google',
+  AAPL: 'Apple',
+  TSLA: 'Tesla',
+  NVDA: 'NVIDIA',
+  HOOD: 'Robinhood',
 }
 
 interface PortfolioViewProps {
-  holdings: StockHolding[]
+  positions: PortfolioPosition[]
+  totalValue: number
+  totalCostBasis: number
+  totalUnrealizedPnl: number
+  totalPnlPercent: number
   loading?: boolean
   currency?: string
-  exchangeRates?: Record<string, number>
   onStockClick?: (symbol: string) => void
 }
 
-export default function PortfolioView({ 
-  holdings, 
+export default function PortfolioView({
+  positions,
+  totalValue,
+  totalUnrealizedPnl,
+  totalPnlPercent,
   loading = false,
-  currency = 'USD',
-  exchangeRates = { USD: 1, INR: 90, CNY: 7.2, EUR: 0.92 },
+  currency = 'INR',
   onStockClick
 }: PortfolioViewProps) {
-  
+
   const getCurrencySymbol = (curr: string) => {
     const symbols: Record<string, string> = {
       USD: '$',
@@ -56,12 +60,7 @@ export default function PortfolioView({
     return symbols[curr] || '$'
   }
 
-  const convertValue = (valueInUSD: number) => {
-    return valueInUSD * (exchangeRates[currency] || 1)
-  }
-
-  const totalPortfolioValue = holdings.reduce((sum, holding) => sum + holding.value, 0)
-  const convertedTotal = convertValue(totalPortfolioValue)
+  const isTotalPositive = totalUnrealizedPnl >= 0
 
   if (loading) {
     return (
@@ -91,10 +90,10 @@ export default function PortfolioView({
     )
   }
 
-  // Filter out holdings with zero balance
-  const activeHoldings = holdings.filter(h => h.balance > 0)
+  // Filter out positions with zero quantity
+  const activePositions = positions.filter(p => p.currentQuantity > 0)
 
-  if (activeHoldings.length === 0) {
+  if (activePositions.length === 0) {
     return (
       <Card sx={{ bgcolor: '#ffffff', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', border: '1px solid #e0e0e0' }}>
         <CardContent sx={{ p: 3 }}>
@@ -117,36 +116,72 @@ export default function PortfolioView({
   return (
     <Card sx={{ bgcolor: '#ffffff', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.1)', border: '1px solid #e0e0e0' }}>
       <CardContent sx={{ p: 3 }}>
-        {/* Header with Total Value */}
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-          <Typography variant="h6" sx={{ fontWeight: 600, color: '#000000', fontFamily: "'Poppins', sans-serif" }}>
+        {/* Header with Total Value and P&L */}
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 600, color: '#000000', fontFamily: "'Poppins', sans-serif", mb: 2 }}>
             Portfolio
           </Typography>
-          <Box sx={{ textAlign: 'right' }}>
-            <Typography variant="caption" sx={{ color: '#666666', fontFamily: "'Inter', sans-serif", display: 'block' }}>
-              Total Value
-            </Typography>
-            <Typography variant="h5" sx={{ fontWeight: 700, color: '#000000', fontFamily: "'Poppins', sans-serif" }}>
-              {getCurrencySymbol(currency)}{convertedTotal.toFixed(2)}
-            </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <Box>
+              <Typography variant="caption" sx={{ color: '#666666', fontFamily: "'Inter', sans-serif", display: 'block' }}>
+                Total Value
+              </Typography>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: '#000000', fontFamily: "'Poppins', sans-serif" }}>
+                {getCurrencySymbol(currency)}{totalValue.toFixed(2)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'right' }}>
+              <Typography variant="caption" sx={{ color: '#666666', fontFamily: "'Inter', sans-serif", display: 'block' }}>
+                Unrealized P&L
+              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-end' }}>
+                <Typography
+                  variant="h6"
+                  sx={{
+                    fontWeight: 700,
+                    color: isTotalPositive ? '#2e7d32' : '#d32f2f',
+                    fontFamily: "'Poppins', sans-serif"
+                  }}
+                >
+                  {isTotalPositive ? '+' : ''}{getCurrencySymbol(currency)}{totalUnrealizedPnl.toFixed(2)}
+                </Typography>
+                <Chip
+                  icon={isTotalPositive ? <TrendingUp sx={{ fontSize: '0.875rem' }} /> : <TrendingDown sx={{ fontSize: '0.875rem' }} />}
+                  label={`${isTotalPositive ? '+' : ''}${totalPnlPercent.toFixed(2)}%`}
+                  size="small"
+                  sx={{
+                    height: 24,
+                    fontSize: '0.75rem',
+                    bgcolor: isTotalPositive ? '#e8f5e9' : '#ffebee',
+                    color: isTotalPositive ? '#2e7d32' : '#d32f2f',
+                    fontWeight: 600,
+                    fontFamily: "'Inter', sans-serif",
+                    '& .MuiChip-icon': {
+                      color: isTotalPositive ? '#2e7d32' : '#d32f2f',
+                    },
+                  }}
+                />
+              </Box>
+            </Box>
           </Box>
         </Box>
 
         {/* Holdings List */}
         <List sx={{ p: 0 }}>
-          {activeHoldings.map((holding, index) => {
-            const convertedValue = convertValue(holding.value)
-            const convertedPrice = convertValue(holding.currentPrice)
-            const isPositive = (holding.change || 0) >= 0
+          {activePositions.map((position, index) => {
+            const isPositive = (position.unrealizedPnlPercent || 0) >= 0
+            const stockName = stockNames[position.stockSymbol] || position.stockSymbol
+            const currentValue = position.currentValue || 0
+            const currentPrice = position.currentPrice || 0
 
             return (
               <ListItem
-                key={holding.symbol}
-                onClick={() => onStockClick?.(holding.symbol)}
+                key={position.stockSymbol}
+                onClick={() => onStockClick?.(position.stockSymbol)}
                 sx={{
                   px: 2,
                   py: 2,
-                  mb: index < activeHoldings.length - 1 ? 1.5 : 0,
+                  mb: index < activePositions.length - 1 ? 1.5 : 0,
                   borderRadius: 2,
                   border: '1px solid #e0e0e0',
                   bgcolor: '#ffffff',
@@ -173,49 +208,49 @@ export default function PortfolioView({
                         fontSize: '1.5rem',
                       }}
                     >
-                      {stockIcons[holding.symbol as keyof typeof stockIcons] || '📈'}
+                      {stockIcons[position.stockSymbol as keyof typeof stockIcons] || '📈'}
                     </Avatar>
-                    
+
                     {/* Stock Name and Balance */}
                     <Box>
-                      <Typography 
-                        sx={{ 
-                          fontWeight: 600, 
+                      <Typography
+                        sx={{
+                          fontWeight: 600,
                           fontSize: '0.875rem',
                           color: '#000000',
                           fontFamily: "'Inter', sans-serif",
                           mb: 0.5,
                         }}
                       >
-                        {holding.name}
+                        {stockName}
                       </Typography>
-                      <Typography 
-                        variant="caption" 
-                        sx={{ 
+                      <Typography
+                        variant="caption"
+                        sx={{
                           color: '#666666',
                           fontFamily: "'Inter', sans-serif",
                           display: 'block',
                         }}
                       >
-                        {holding.balance.toFixed(6)} {holding.symbol}
+                        {position.currentQuantity.toFixed(6)} {position.stockSymbol}
                       </Typography>
-                      <Typography 
-                        variant="caption" 
-                        sx={{ 
+                      <Typography
+                        variant="caption"
+                        sx={{
                           color: '#999999',
                           fontFamily: "'Inter', sans-serif",
                           display: 'block',
                         }}
                       >
-                        {getCurrencySymbol(currency)}{convertedPrice.toFixed(2)} per share
+                        {getCurrencySymbol(position.baseCurrency)}{currentPrice.toFixed(2)} per share
                       </Typography>
                     </Box>
                   </Box>
 
-                  {/* Right side - Value and Change */}
+                  {/* Right side - Value and P&L */}
                   <Box sx={{ textAlign: 'right' }}>
-                    <Typography 
-                      sx={{ 
+                    <Typography
+                      sx={{
                         fontWeight: 700,
                         fontSize: '0.875rem',
                         color: '#000000',
@@ -223,12 +258,25 @@ export default function PortfolioView({
                         mb: 0.5,
                       }}
                     >
-                      {getCurrencySymbol(currency)}{convertedValue.toFixed(2)}
+                      {getCurrencySymbol(position.baseCurrency)}{currentValue.toFixed(2)}
                     </Typography>
-                    {holding.changePercent !== undefined && (
+                    {position.unrealizedPnl !== undefined && position.unrealizedPnl !== null && (
+                      <Typography
+                        sx={{
+                          fontWeight: 600,
+                          fontSize: '0.75rem',
+                          color: isPositive ? '#2e7d32' : '#d32f2f',
+                          fontFamily: "'Inter', sans-serif",
+                          mb: 0.5,
+                        }}
+                      >
+                        {isPositive ? '+' : ''}{getCurrencySymbol(position.baseCurrency)}{position.unrealizedPnl.toFixed(2)}
+                      </Typography>
+                    )}
+                    {position.unrealizedPnlPercent !== null && (
                       <Chip
                         icon={isPositive ? <TrendingUp sx={{ fontSize: '0.875rem' }} /> : <TrendingDown sx={{ fontSize: '0.875rem' }} />}
-                        label={`${isPositive ? '+' : ''}${holding.changePercent.toFixed(2)}%`}
+                        label={`${isPositive ? '+' : ''}${position.unrealizedPnlPercent.toFixed(2)}%`}
                         size="small"
                         sx={{
                           height: 20,

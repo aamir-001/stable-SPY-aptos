@@ -1,4 +1,5 @@
 import { aptos, signer } from "../aptosClient.js";
+import { logMintTransaction } from "./portfolioService.js";
 
 // Supported currencies
 export type CurrencyType = "INR" | "EUR" | "CNY";
@@ -55,6 +56,20 @@ export async function mintCurrency(
     await aptos.waitForTransaction({ transactionHash: committed.hash });
 
     console.log(`[MINT ${currency}] Success! TxHash: ${committed.hash}`);
+
+    // Log transaction to database
+    try {
+      await logMintTransaction({
+        walletAddress: userAddress,
+        currencySymbol: currency,
+        amount,
+        baseCurrency: currency,
+        txHash: committed.hash,
+      });
+    } catch (error) {
+      console.error('Failed to log mint transaction to database:', error);
+      // Don't fail the whole operation if DB logging fails
+    }
 
     return {
       success: true,

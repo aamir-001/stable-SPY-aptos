@@ -31,6 +31,12 @@ A modern decentralized finance (DeFi) platform built on Aptos blockchain that al
 - **Aptos TS SDK** - Blockchain interaction
 - **Node.js** - Runtime environment
 - **CORS** - Cross-origin resource sharing
+- **PostgreSQL** - Relational database for transaction history and analytics
+- **pg** - PostgreSQL client library
+
+### Database
+- **PostgreSQL 16** - Primary database
+- **Docker** - Containerized database deployment
 
 ### Smart Contracts
 - **Move** - Aptos smart contract language
@@ -43,6 +49,7 @@ A modern decentralized finance (DeFi) platform built on Aptos blockchain that al
 ## 📋 Prerequisites
 
 - **Node.js** 18+ and npm
+- **Docker** and **Docker Compose** (for PostgreSQL database)
 - **Aptos CLI** (optional, for contract deployment)
 - **Aptos Wallet** (Petra, Martian, or other Aptos-compatible wallet)
 
@@ -58,12 +65,17 @@ stable-SPY-aptos/
 │   └── Move.toml
 ├── backend/                 # Express.js backend server
 │   ├── src/
+│   │   ├── db/             # Database configuration and schema
+│   │   │   ├── database.ts # PostgreSQL connection pool
+│   │   │   └── init.sql    # Database initialization script
 │   │   ├── routes/         # API routes (exchange, currency, token)
 │   │   ├── services/       # Business logic (exchangeService, priceService, tokenService)
 │   │   ├── aptosClient.ts  # Aptos SDK client and signer
 │   │   └── index.ts        # Express server entry point
 │   ├── .env                # Environment variables (not in repo)
 │   └── package.json
+├── docker-compose.yml       # Docker configuration for PostgreSQL
+├── .dockerignore           # Docker ignore file
 ├── ssa-frontend/            # React frontend application
 │   ├── src/
 │   │   ├── components/      # React components (modals, headers)
@@ -84,7 +96,48 @@ git clone <repository-url>
 cd stable-SPY-aptos
 ```
 
-### 2. Backend Setup
+### 2. Start PostgreSQL Database
+
+#### Start the database container
+
+```bash
+docker-compose up -d
+```
+
+This will:
+- Pull the PostgreSQL 16 Alpine image
+- Create a database named `ssa_exchange`
+- Run the initialization script ([backend/src/db/init.sql](backend/src/db/init.sql)) to create tables
+- Start the database on `localhost:5432`
+
+#### Verify database is running
+
+```bash
+docker-compose ps
+```
+
+You should see the `ssa-postgres` container running.
+
+#### View database logs
+
+```bash
+docker-compose logs postgres
+```
+
+#### Stop the database
+
+```bash
+docker-compose down
+```
+
+#### Reset database (WARNING: deletes all data)
+
+```bash
+docker-compose down -v
+docker-compose up -d
+```
+
+### 3. Backend Setup
 
 #### Install Dependencies
 
@@ -109,6 +162,13 @@ PRIVATE_KEY=0xyour_private_key_here
 
 # Server Configuration
 PORT=3001
+
+# PostgreSQL Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=ssa_exchange
+DB_USER=ssa_admin
+DB_PASSWORD=ssa_secure_password_2024
 ```
 
 **Security Note**: Never commit your `.env` file or private key to version control!
@@ -121,6 +181,7 @@ npm run dev
 
 The backend will start at `http://localhost:3001`. You should see:
 ```
+✅ Connected to PostgreSQL database
 🚀 Backend listening at http://localhost:3001
 📊 Exchange API: http://localhost:3001/exchange
 💰 Currency API: http://localhost:3001/currency
@@ -128,7 +189,7 @@ The backend will start at `http://localhost:3001`. You should see:
 ✅ Server is ready to accept connections
 ```
 
-### 3. Frontend Setup
+### 4. Frontend Setup
 
 #### Install Dependencies
 
@@ -147,12 +208,82 @@ The frontend will start at `http://localhost:5173` (or the port shown in termina
 
 The Vite proxy is already configured to forward `/api` requests to `http://localhost:3001`.
 
-### 4. Connect Your Wallet
+### 5. Connect Your Wallet
 
 1. Install an Aptos wallet extension (Petra, Martian, etc.)
 2. Switch to Aptos Testnet in your wallet
 3. Click "Connect Wallet" in the top right corner
 4. Select your wallet and approve the connection
+
+## 🗄️ Database Schema
+
+The PostgreSQL database includes the following tables:
+
+### Tables
+
+1. **users** - Track wallet addresses
+   - `id` (UUID, primary key)
+   - `wallet_address` (unique)
+   - `created_at`, `updated_at`
+
+2. **transactions** - All buy/sell/mint operations
+   - `id` (UUID, primary key)
+   - `user_id` (foreign key to users)
+   - `wallet_address`
+   - `transaction_type` (BUY, SELL, MINT)
+   - `stock_symbol`, `currency_symbol`
+   - `amount`, `price_per_unit`, `total_value`
+   - `tx_hash` (blockchain transaction hash, unique)
+   - `status` (SUCCESS, FAILED, PENDING)
+   - `created_at`
+
+3. **portfolio_holdings** - Current balances (cached from blockchain)
+   - `id` (UUID, primary key)
+   - `user_id` (foreign key to users)
+   - `wallet_address`
+   - `asset_type` (STOCK, CURRENCY)
+   - `symbol`
+   - `balance`
+   - `last_updated`
+
+4. **stock_prices** - Historical price data
+   - `id` (UUID, primary key)
+   - `symbol`
+   - `price_usd`, `price_inr`
+   - `change_percent`
+   - `timestamp`
+
+5. **trading_analytics** - Daily trading statistics
+   - `id` (UUID, primary key)
+   - `date`, `stock_symbol`
+   - `total_buy_volume`, `total_sell_volume`
+   - `total_transactions`, `unique_traders`
+
+### Database Management
+
+#### Connect to PostgreSQL CLI
+
+```bash
+docker exec -it ssa-postgres psql -U ssa_admin -d ssa_exchange
+```
+
+Common commands:
+- `\dt` - List all tables
+- `\d table_name` - Describe table structure
+- `SELECT * FROM transactions LIMIT 10;` - View recent transactions
+- `\q` - Quit
+
+#### Backup Database
+
+```bash
+docker exec -t ssa-postgres pg_dump -U ssa_admin ssa_exchange > backup.sql
+```
+
+#### Restore Database
+
+```bash
+docker exec -i ssa-postgres psql -U ssa_admin ssa_exchange < backup.sql
+```
 
 ## 📱 Usage Guide
 

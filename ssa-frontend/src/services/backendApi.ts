@@ -64,6 +64,79 @@ export interface CurrencyBalances {
   };
 }
 
+export interface PortfolioPosition {
+  stockSymbol: string;
+  currentQuantity: number;
+  currentPrice: number | null;
+  currentValue: number | null;
+  totalCostBasis: number;
+  averageCostPerShare: number;
+  unrealizedPnl: number | null;
+  unrealizedPnlPercent: number | null;
+  realizedPnl: number;
+  totalPnl: number | null;
+  baseCurrency: string;
+}
+
+export interface PortfolioOverview {
+  success: boolean;
+  address: string;
+  positions: PortfolioPosition[];
+  summary: {
+    totalValue: number;
+    totalCostBasis: number;
+    totalUnrealizedPnl: number;
+    totalRealizedPnl: number;
+    totalPnl: number;
+    totalPnlPercent: number;
+  };
+}
+
+export interface Transaction {
+  type: string;
+  stockSymbol?: string;
+  currencySymbol?: string;
+  quantity: number;
+  pricePerShare: number | null;
+  totalValue: number;
+  realizedPnl: number | null;
+  baseCurrency: string;
+  txHash: string;
+  status: string;
+  timestamp: string;
+}
+
+export interface StockPositionDetail {
+  success: boolean;
+  stockSymbol: string;
+  currentPrice: number;
+  position: {
+    currentQuantity: number;
+    currentValue: number;
+    totalCostBasis: number;
+    averageCostPerShare: number;
+  };
+  pnl: {
+    unrealizedPnl: number;
+    unrealizedPnlPercent: number;
+    realizedPnl: number;
+    totalPnl: number;
+    totalPnlPercent: number;
+  };
+  baseCurrency: string;
+  transactions: Transaction[];
+}
+
+export interface UserInfo {
+  success: boolean;
+  exists: boolean;
+  id?: string;
+  walletAddress?: string;
+  baseCurrency: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export const backendApi = {
   // Buy stock using backend endpoint
   async buyStock(request: BuyStockRequest): Promise<BuyStockResponse> {
@@ -139,6 +212,50 @@ export const backendApi = {
     } catch (error: any) {
       console.error('Health check error:', error);
       throw new Error('Backend is not responding');
+    }
+  },
+
+  // Get portfolio overview with P&L
+  async getPortfolio(address: string): Promise<PortfolioOverview> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/portfolio/${address}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get portfolio error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get portfolio');
+    }
+  },
+
+  // Get detailed stock position with transactions
+  async getStockPosition(address: string, stock: string): Promise<StockPositionDetail> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/portfolio/${address}/stock/${stock}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get stock position error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get stock position');
+    }
+  },
+
+  // Get transaction history
+  async getTransactions(address: string, limit: number = 50): Promise<Transaction[]> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/portfolio/${address}/transactions?limit=${limit}`);
+      return response.data.transactions || [];
+    } catch (error: any) {
+      console.error('Get transactions error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get transactions');
+    }
+  },
+
+  // Get user info (base currency, etc.)
+  async getUserInfo(address: string): Promise<UserInfo> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/portfolio/${address}/user-info`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get user info error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get user info');
     }
   }
 };

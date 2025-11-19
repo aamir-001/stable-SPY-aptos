@@ -28,10 +28,10 @@ const stocks = [
 // Main content component that uses the wallet
 function MainContent() {
   const { account, connected } = useWallet();
-  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("USD");
+  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("INR");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
-  const [balanceCurrency, setBalanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
+  const [balanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
   const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
   const [sellStockModalOpen, setSellStockModalOpen] = useState(false);
   const [mintModalOpen, setMintModalOpen] = useState(false);
@@ -40,10 +40,10 @@ function MainContent() {
   const exchangeRates = { USD: 1.0, INR: 90.0, CNY: 7.2, EUR: 0.92 };
 
   // Balance states
-  const [aptBalance, setAptBalance] = useState<number | null>(null);
+  const [_aptBalance, setAptBalance] = useState<number | null>(null);
   const [inrBalance, setInrBalance] = useState<number | null>(null);
-  const [cnyBalance, setCnyBalance] = useState<number | null>(null);
-  const [eurBalance, setEurBalance] = useState<number | null>(null);
+  const [_cnyBalance, setCnyBalance] = useState<number | null>(null);
+  const [_eurBalance, setEurBalance] = useState<number | null>(null);
   const [loadingBalances, setLoadingBalances] = useState(false);
 
   // Stock balance state
@@ -56,15 +56,37 @@ function MainContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Portfolio holdings state
-  const [portfolioHoldings, setPortfolioHoldings] = useState<any[]>([]);
+  // Portfolio data state
+  const [portfolioPositions, setPortfolioPositions] = useState<any[]>([]);
+  const [portfolioSummary, setPortfolioSummary] = useState({
+    totalValue: 0,
+    totalCostBasis: 0,
+    totalUnrealizedPnl: 0,
+    totalPnlPercent: 0,
+  });
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
 
-  // Debug logs
+  // Fetch user's base currency from database when wallet connects
   useEffect(() => {
-    console.log("Connected:", connected);
-    console.log("Account:", account);
-    console.log("Account address:", account?.address);
-  }, [connected, account]);
+    const fetchUserBaseCurrency = async () => {
+      if (!connected || !account?.address) {
+        setSelectedCurrency("INR"); // Reset to default when disconnected
+        return;
+      }
+
+      try {
+        const userInfo = await backendApi.getUserInfo(account.address.toString());
+        if (userInfo.baseCurrency) {
+          setSelectedCurrency(userInfo.baseCurrency as "USD" | "INR" | "CNY" | "EUR");
+        }
+      } catch (error) {
+        console.error('Error fetching user base currency:', error);
+        // Keep default currency on error
+      }
+    };
+
+    fetchUserBaseCurrency();
+  }, [connected, account?.address]);
 
   // Load stock prices
   useEffect(() => {
@@ -108,13 +130,7 @@ function MainContent() {
   // Load balances when wallet connects
   useEffect(() => {
     const loadBalances = async () => {
-      console.log("=== Load Balances Effect ===");
-      console.log("Connected:", connected);
-      console.log("Account:", account);
-      console.log("Account address:", account?.address?.toString());
-
       if (!connected || !account?.address) {
-        console.log("No wallet connected or no address, clearing balances");
         setAptBalance(null);
         setInrBalance(null);
         setCnyBalance(null);
@@ -125,7 +141,6 @@ function MainContent() {
       setLoadingBalances(true);
       try {
         const addressString = account.address.toString();
-        console.log("Loading balances for address:", addressString);
 
         // Load all balances using backend API
         const [apt, currencyBalances] = await Promise.all([
@@ -139,16 +154,12 @@ function MainContent() {
           }),
         ]);
 
-        console.log("Balances - APT:", apt, "Currencies:", currencyBalances);
-
         const convertedApt = apt / 100000000;
 
         setAptBalance(convertedApt);
         setInrBalance(currencyBalances.balances.INR);
         setCnyBalance(currencyBalances.balances.CNY);
         setEurBalance(currencyBalances.balances.EUR);
-
-        console.log("Converted balances - APT:", convertedApt, "INR:", currencyBalances.balances.INR, "CNY:", currencyBalances.balances.CNY, "EUR:", currencyBalances.balances.EUR);
       } catch (error) {
         console.error("Error loading balances:", error);
       } finally {
@@ -189,49 +200,46 @@ function MainContent() {
     return () => clearInterval(interval);
   }, [connected, account?.address, selectedStock.symbol]);
 
-  // Load portfolio holdings
+  // Load portfolio data from backend API
   useEffect(() => {
-    const loadPortfolioHoldings = async () => {
+    const loadPortfolio = async () => {
       if (!connected || !account?.address) {
-        setPortfolioHoldings([]);
+        setPortfolioPositions([]);
+        setPortfolioSummary({
+          totalValue: 0,
+          totalCostBasis: 0,
+          totalUnrealizedPnl: 0,
+          totalPnlPercent: 0,
+        });
         return;
       }
 
+      setLoadingPortfolio(true);
       try {
-        const holdingsData = await Promise.all(
-          stocks.map(async (stock) => {
-            const balance = await backendApi.getStockBalance(
-              stock.symbol, 
-              account.address.toString()
-            ).catch(() => 0);
-            
-            const quote = stockQuotes[stock.symbol];
-            
-            return {
-              symbol: stock.symbol,
-              name: stock.name,
-              alphaSymbol: stock.alphaSymbol,
-              balance: balance,
-              currentPrice: quote?.price || 0,
-              value: balance * (quote?.price || 0),
-              change: quote?.change,
-              changePercent: quote?.changePercent,
-            };
-          })
-        );
-        
-        setPortfolioHoldings(holdingsData);
+        const portfolioData = await backendApi.getPortfolio(account.address.toString());
+
+        setPortfolioPositions(portfolioData.positions);
+        setPortfolioSummary(portfolioData.summary);
       } catch (error) {
         console.error('Error loading portfolio:', error);
+        setPortfolioPositions([]);
+        setPortfolioSummary({
+          totalValue: 0,
+          totalCostBasis: 0,
+          totalUnrealizedPnl: 0,
+          totalPnlPercent: 0,
+        });
+      } finally {
+        setLoadingPortfolio(false);
       }
     };
 
-    loadPortfolioHoldings();
-    
+    loadPortfolio();
+
     // Refresh portfolio every 10 seconds
-    const interval = setInterval(loadPortfolioHoldings, 10000);
+    const interval = setInterval(loadPortfolio, 10000);
     return () => clearInterval(interval);
-  }, [connected, account?.address, stockQuotes]);
+  }, [connected, account?.address]);
 
   // Handle stock click from portfolio
   const handleStockClick = (stockSymbol: string) => {
@@ -245,30 +253,6 @@ function MainContent() {
 
   const currentQuote = stockQuotes[selectedStock.symbol];
   const currentStockPrice = currentQuote?.price || 0;
-  
-  // Get the actual balance for selected currency
-  const getCurrentBalance = (): number => {
-    console.log("Getting current balance for currency:", selectedCurrency);
-    console.log("Balances - APT:", aptBalance, "INR:", inrBalance, "CNY:", cnyBalance, "EUR:", eurBalance);
-    
-    if (selectedCurrency === "USD") {
-      const balance = aptBalance ? aptBalance * exchangeRates.USD : 0;
-      console.log("USD balance calculated:", balance);
-      return balance;
-    } else if (selectedCurrency === "INR") {
-      console.log("INR balance:", inrBalance);
-      return inrBalance || 0;
-    } else if (selectedCurrency === "CNY") {
-      console.log("CNY balance:", cnyBalance);
-      return cnyBalance || 0;
-    } else if (selectedCurrency === "EUR") {
-      console.log("EUR balance:", eurBalance);
-      return eurBalance || 0;
-    }
-    return 0;
-  };
-
-  const currentBalance = getCurrentBalance();
 
   // Convert USD price to selected currency
   const convertPriceToSelectedCurrency = (priceInUSD: number): number => {
@@ -276,7 +260,6 @@ function MainContent() {
   };
 
   const currentStockPriceInSelectedCurrency = convertPriceToSelectedCurrency(currentStockPrice);
-  const canBuy = currentStockPriceInSelectedCurrency > 0 ? Math.floor(currentBalance / currentStockPriceInSelectedCurrency) : 0;
 
   // Format chart data with selected currency conversion
   const chartData = intradayData.map((point) => ({
@@ -296,6 +279,19 @@ function MainContent() {
         .catch((error) => {
           console.error("Error refreshing balances:", error);
         });
+    }
+  };
+
+  const handlePortfolioUpdate = async () => {
+    // Reload portfolio after buy/sell transactions
+    if (connected && account?.address) {
+      try {
+        const portfolioData = await backendApi.getPortfolio(account.address.toString());
+        setPortfolioPositions(portfolioData.positions);
+        setPortfolioSummary(portfolioData.summary);
+      } catch (error) {
+        console.error("Error refreshing portfolio:", error);
+      }
     }
   };
 
@@ -397,10 +393,11 @@ function MainContent() {
                             stroke="#999999"
                             tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
                           />
-                          <YAxis 
+                          <YAxis
                             stroke="#999999"
                             tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                            domain={['dataMin - 1', 'dataMax + 1']}
+                            domain={[(dataMin: number) => dataMin * 0.999, (dataMax: number) => dataMax * 1.001]}
+                            tickFormatter={(value) => value.toFixed(2)}
                           />
                           <Tooltip
                             contentStyle={{
@@ -446,10 +443,13 @@ function MainContent() {
           <Grid container spacing={3} sx={{ mb: 3 }}>
             <Grid size={{ xs: 12 }}>
               <PortfolioView
-                holdings={portfolioHoldings}
-                loading={loading || loadingBalances}
+                positions={portfolioPositions}
+                totalValue={portfolioSummary.totalValue}
+                totalCostBasis={portfolioSummary.totalCostBasis}
+                totalUnrealizedPnl={portfolioSummary.totalUnrealizedPnl}
+                totalPnlPercent={portfolioSummary.totalPnlPercent}
+                loading={loadingPortfolio}
                 currency={selectedCurrency}
-                exchangeRates={exchangeRates}
                 onStockClick={handleStockClick}
               />
             </Grid>
@@ -549,6 +549,7 @@ function MainContent() {
         onClose={() => setBuyStockModalOpen(false)}
         onBuySuccess={() => {
           handleBalanceUpdate();
+          handlePortfolioUpdate();
           if (account?.address) {
             backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
           }
@@ -561,6 +562,7 @@ function MainContent() {
         currentBalance={stockBalance}
         onSellSuccess={() => {
           handleBalanceUpdate();
+          handlePortfolioUpdate();
           if (account?.address) {
             backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
           }
