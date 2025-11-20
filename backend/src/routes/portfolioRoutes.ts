@@ -10,6 +10,20 @@ router.get('/:address', async (req, res) => {
   try {
     const { address } = req.params;
 
+    // Get user info to determine base currency
+    const userInfo = await getUserInfo(address);
+    const baseCurrency = userInfo?.baseCurrency || 'INR';
+
+    // Exchange rates: USD to other currencies
+    const exchangeRates: Record<string, number> = {
+      USD: 1.0,
+      INR: 90.0,
+      CNY: 7.2,
+      EUR: 0.92,
+    };
+
+    const exchangeRate = exchangeRates[baseCurrency] || 90.0;
+
     // Get all supported stock symbols
     const ALL_STOCKS = ['GOOG', 'AAPL', 'TSLA', 'NVDA', 'HOOD'];
 
@@ -34,11 +48,10 @@ router.get('/:address', async (req, res) => {
           const totalCostBasis = dbPosition?.totalCostBasis || 0;
           const averageCostPerShare = dbPosition?.averageCostPerShare || 0;
           const realizedProfitLoss = dbPosition?.realizedProfitLoss || 0;
-          const baseCurrency = dbPosition?.baseCurrency || 'INR';
 
           // Get current price from Yahoo Finance
           const currentPrice = await getStockPriceFromYahoo(stockSymbol);
-          const currentPriceInBaseCurrency = currentPrice * 90; // Convert to INR (hardcoded for now)
+          const currentPriceInBaseCurrency = currentPrice * exchangeRate;
 
           // Calculate unrealized P&L using on-chain balance
           const currentValue = onChainBalance * currentPriceInBaseCurrency;
@@ -113,9 +126,19 @@ router.get('/:address/stock/:stock', async (req, res) => {
       });
     }
 
+    // Exchange rates: USD to other currencies
+    const exchangeRates: Record<string, number> = {
+      USD: 1.0,
+      INR: 90.0,
+      CNY: 7.2,
+      EUR: 0.92,
+    };
+
+    const exchangeRate = exchangeRates[position.baseCurrency] || 90.0;
+
     // Get current price
     const currentPrice = await getStockPriceFromYahoo(stock.toUpperCase());
-    const currentPriceInBaseCurrency = currentPrice * 90; // Convert to INR
+    const currentPriceInBaseCurrency = currentPrice * exchangeRate;
 
     // Calculate unrealized P&L
     const currentValue = position.currentQuantity * currentPriceInBaseCurrency;

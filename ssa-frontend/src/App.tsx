@@ -39,6 +39,17 @@ function MainContent() {
   // Hardcoded exchange rates (1 USD = ...)
   const exchangeRates = { USD: 1.0, INR: 90.0, CNY: 7.2, EUR: 0.92 };
 
+  // Currency symbol helper
+  const getCurrencySymbol = (curr: string) => {
+    const symbols: Record<string, string> = {
+      USD: '$',
+      INR: '₹',
+      CNY: '¥',
+      EUR: '€',
+    };
+    return symbols[curr] || '$';
+  };
+
   // Balance states
   const [_aptBalance, setAptBalance] = useState<number | null>(null);
   const [inrBalance, setInrBalance] = useState<number | null>(null);
@@ -478,7 +489,7 @@ function MainContent() {
                         {stockBalance.toFixed(6)} {selectedStock.symbol}
                       </Typography>
                       <Typography variant="body2" sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                        Total Value: ₹{(stockBalance * currentStockPriceInSelectedCurrency * exchangeRates.INR).toFixed(2)}
+                        Total Value: {getCurrencySymbol(selectedCurrency)}{(stockBalance * currentStockPriceInSelectedCurrency).toFixed(2)}
                       </Typography>
                     </>
                   )}

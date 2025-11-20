@@ -22,8 +22,10 @@ export async function getStockPriceInINR(stock: string): Promise<number> {
 
   // Try Yahoo Finance Chart API first
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${normalized}?interval=1d&range=1d`;
-    
+    // Map GOOG to GOOGL for Yahoo Finance (both frontend and backend use same symbol)
+    const yahooSymbol = normalized === 'GOOG' ? 'GOOGL' : normalized;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`;
+
     const response = await fetch(url);
     
     if (!response.ok) {
@@ -88,7 +90,9 @@ export async function getStockPriceFromYahoo(stock: string): Promise<number> {
 
   // Try Yahoo Finance Chart API first
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${normalized}?interval=1d&range=1d`;
+    // Map GOOG to GOOGL for Yahoo Finance (both frontend and backend use same symbol)
+    const yahooSymbol = normalized === 'GOOG' ? 'GOOGL' : normalized;
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}?interval=1d&range=1d`;
 
     const response = await fetch(url);
 

@@ -1,19 +1,15 @@
-import { query, getClient } from '../db/database.js';
+import { query } from '../db/database.js';
 
-// Upsert user and get user ID
+// Upsert user and get user ID using database function
 export async function upsertUser(walletAddress: string, baseCurrency: string = 'INR'): Promise<string> {
   const result = await query(
-    `INSERT INTO users (wallet_address, base_currency)
-     VALUES ($1, $2)
-     ON CONFLICT (wallet_address)
-     DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-     RETURNING id`,
+    `SELECT upsert_user($1, $2) as id`,
     [walletAddress, baseCurrency]
   );
   return result.rows[0].id;
 }
 
-// Log a buy transaction and update portfolio position
+// Log a buy transaction (trigger automatically updates portfolio)
 export async function logBuyTransaction(params: {
   walletAddress: string;
   stockSymbol: string;
@@ -23,77 +19,35 @@ export async function logBuyTransaction(params: {
   baseCurrency: string;
   txHash: string;
 }) {
-  const client = await getClient();
-
   try {
-    await client.query('BEGIN');
+    // 1. Upsert user and get user_id
+    const userId = await upsertUser(params.walletAddress, params.baseCurrency);
 
-    // 1. Upsert user
-    const userResult = await client.query(
-      `INSERT INTO users (wallet_address, base_currency)
-       VALUES ($1, $2)
-       ON CONFLICT (wallet_address)
-       DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-       RETURNING id`,
-      [params.walletAddress, params.baseCurrency]
-    );
-    const userId = userResult.rows[0].id;
-
-    // 2. Insert transaction record
-    await client.query(
+    // 2. Insert transaction (trigger automatically updates portfolio_positions)
+    await query(
       `INSERT INTO transactions (
-        user_id, wallet_address, transaction_type, stock_symbol,
-        quantity, price_per_share, total_value, realized_pnl,
-        base_currency, tx_hash, status
-      ) VALUES ($1, $2, 'BUY', $3, $4, $5, $6, NULL, $7, $8, 'SUCCESS')`,
+        user_id, transaction_type, stock_symbol,
+        quantity, price_per_unit, total_value,
+        tx_hash, status
+      ) VALUES ($1, 'BUY', $2, $3, $4, $5, $6, 'SUCCESS')`,
       [
         userId,
-        params.walletAddress,
         params.stockSymbol,
         params.quantity,
         params.pricePerShare,
         params.totalValue,
-        params.baseCurrency,
         params.txHash,
       ]
     );
 
-    // 3. Update portfolio position (upsert)
-    await client.query(
-      `INSERT INTO portfolio_positions (
-        user_id, wallet_address, stock_symbol,
-        current_quantity, total_cost_basis, average_cost_per_share,
-        realized_profit_loss, base_currency
-      ) VALUES ($1, $2, $3, $4, $5, $6, 0, $7)
-      ON CONFLICT (wallet_address, stock_symbol)
-      DO UPDATE SET
-        current_quantity = portfolio_positions.current_quantity + $4,
-        total_cost_basis = portfolio_positions.total_cost_basis + $5,
-        average_cost_per_share = (portfolio_positions.total_cost_basis + $5) / (portfolio_positions.current_quantity + $4),
-        last_updated = CURRENT_TIMESTAMP`,
-      [
-        userId,
-        params.walletAddress,
-        params.stockSymbol,
-        params.quantity,
-        params.totalValue,
-        params.pricePerShare,
-        params.baseCurrency,
-      ]
-    );
-
-    await client.query('COMMIT');
-    console.log(`✅ [DB] Logged BUY transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare}`);
+    console.log(`✅ [DB] Logged BUY transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (trigger will update portfolio)`);
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('❌ [DB] Error logging buy transaction:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
 
-// Log a sell transaction and update portfolio position
+// Log a sell transaction (trigger automatically calculates P&L and updates portfolio)
 export async function logSellTransaction(params: {
   walletAddress: string;
   stockSymbol: string;
@@ -103,82 +57,35 @@ export async function logSellTransaction(params: {
   baseCurrency: string;
   txHash: string;
 }) {
-  const client = await getClient();
-
   try {
-    await client.query('BEGIN');
+    // 1. Upsert user and get user_id
+    const userId = await upsertUser(params.walletAddress, params.baseCurrency);
 
-    // 1. Upsert user
-    const userResult = await client.query(
-      `INSERT INTO users (wallet_address, base_currency)
-       VALUES ($1, $2)
-       ON CONFLICT (wallet_address)
-       DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-       RETURNING id`,
-      [params.walletAddress, params.baseCurrency]
-    );
-    const userId = userResult.rows[0].id;
-
-    // 2. Get current portfolio position to calculate realized P&L
-    const positionResult = await client.query(
-      `SELECT current_quantity, total_cost_basis, average_cost_per_share
-       FROM portfolio_positions
-       WHERE wallet_address = $1 AND stock_symbol = $2`,
-      [params.walletAddress, params.stockSymbol]
-    );
-
-    if (positionResult.rows.length === 0) {
-      throw new Error(`No position found for ${params.stockSymbol}`);
-    }
-
-    const position = positionResult.rows[0];
-    const averageCost = parseFloat(position.average_cost_per_share);
-    const costOfSoldShares = params.quantity * averageCost;
-    const realizedPnl = params.totalValue - costOfSoldShares;
-
-    // 3. Insert transaction record with realized P&L
-    await client.query(
+    // 2. Insert transaction (trigger automatically calculates realized_pnl and updates portfolio)
+    await query(
       `INSERT INTO transactions (
-        user_id, wallet_address, transaction_type, stock_symbol,
-        quantity, price_per_share, total_value, realized_pnl,
-        base_currency, tx_hash, status
-      ) VALUES ($1, $2, 'SELL', $3, $4, $5, $6, $7, $8, $9, 'SUCCESS')`,
+        user_id, transaction_type, stock_symbol,
+        quantity, price_per_unit, total_value,
+        tx_hash, status
+      ) VALUES ($1, 'SELL', $2, $3, $4, $5, $6, 'SUCCESS')`,
       [
         userId,
-        params.walletAddress,
         params.stockSymbol,
         params.quantity,
         params.pricePerShare,
         params.totalValue,
-        realizedPnl,
-        params.baseCurrency,
         params.txHash,
       ]
     );
 
-    // 4. Update portfolio position
-    await client.query(
-      `UPDATE portfolio_positions SET
-        current_quantity = current_quantity - $1,
-        total_cost_basis = total_cost_basis - $2,
-        realized_profit_loss = realized_profit_loss + $3,
-        last_updated = CURRENT_TIMESTAMP
-       WHERE wallet_address = $4 AND stock_symbol = $5`,
-      [params.quantity, costOfSoldShares, realizedPnl, params.walletAddress, params.stockSymbol]
-    );
-
-    await client.query('COMMIT');
-    console.log(`✅ [DB] Logged SELL transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (P&L: ${realizedPnl >= 0 ? '+' : ''}${realizedPnl.toFixed(2)})`);
+    console.log(`✅ [DB] Logged SELL transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (trigger will calculate P&L)`);
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('❌ [DB] Error logging sell transaction:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
 
-// Log mint transaction
+// Log mint transaction (trigger automatically updates currency_balances)
 export async function logMintTransaction(params: {
   walletAddress: string;
   currencySymbol: string;
@@ -186,48 +93,29 @@ export async function logMintTransaction(params: {
   baseCurrency: string;
   txHash: string;
 }) {
-  const client = await getClient();
-
   try {
-    await client.query('BEGIN');
+    // 1. Upsert user and get user_id
+    const userId = await upsertUser(params.walletAddress, params.baseCurrency);
 
-    // Upsert user
-    const userResult = await client.query(
-      `INSERT INTO users (wallet_address, base_currency)
-       VALUES ($1, $2)
-       ON CONFLICT (wallet_address)
-       DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-       RETURNING id`,
-      [params.walletAddress, params.baseCurrency]
-    );
-    const userId = userResult.rows[0].id;
-
-    // Insert mint transaction
-    await client.query(
+    // 2. Insert transaction (trigger automatically updates currency_balances)
+    await query(
       `INSERT INTO transactions (
-        user_id, wallet_address, transaction_type, currency_symbol,
-        quantity, price_per_share, total_value, realized_pnl,
-        base_currency, tx_hash, status
-      ) VALUES ($1, $2, 'MINT', $3, $4, NULL, $5, NULL, $6, $7, 'SUCCESS')`,
+        user_id, transaction_type, currency_symbol,
+        quantity, total_value, tx_hash, status
+      ) VALUES ($1, 'MINT', $2, $3, $4, $5, 'SUCCESS')`,
       [
         userId,
-        params.walletAddress,
         params.currencySymbol,
         params.amount,
         params.amount,
-        params.baseCurrency,
         params.txHash,
       ]
     );
 
-    await client.query('COMMIT');
-    console.log(`✅ [DB] Logged MINT transaction: ${params.amount} ${params.currencySymbol}`);
+    console.log(`✅ [DB] Logged MINT transaction: ${params.amount} ${params.currencySymbol} (trigger will update balance)`);
   } catch (error) {
-    await client.query('ROLLBACK');
     console.error('❌ [DB] Error logging mint transaction:', error);
     throw error;
-  } finally {
-    client.release();
   }
 }
 
@@ -235,16 +123,17 @@ export async function logMintTransaction(params: {
 export async function getPortfolioOverview(walletAddress: string) {
   const result = await query(
     `SELECT
-      stock_symbol,
-      current_quantity,
-      total_cost_basis,
-      average_cost_per_share,
-      realized_profit_loss,
-      base_currency,
-      last_updated
-     FROM portfolio_positions
-     WHERE wallet_address = $1 AND current_quantity > 0
-     ORDER BY stock_symbol`,
+      pp.stock_symbol,
+      pp.current_quantity,
+      pp.total_cost_basis,
+      pp.average_cost_per_share,
+      pp.realized_profit_loss,
+      pp.last_updated,
+      u.base_currency
+     FROM portfolio_positions pp
+     JOIN users u ON pp.user_id = u.id
+     WHERE u.wallet_address = $1 AND pp.current_quantity > 0
+     ORDER BY pp.stock_symbol`,
     [walletAddress]
   );
 
@@ -263,15 +152,16 @@ export async function getPortfolioOverview(walletAddress: string) {
 export async function getStockPosition(walletAddress: string, stockSymbol: string) {
   const positionResult = await query(
     `SELECT
-      stock_symbol,
-      current_quantity,
-      total_cost_basis,
-      average_cost_per_share,
-      realized_profit_loss,
-      base_currency,
-      last_updated
-     FROM portfolio_positions
-     WHERE wallet_address = $1 AND stock_symbol = $2`,
+      pp.stock_symbol,
+      pp.current_quantity,
+      pp.total_cost_basis,
+      pp.average_cost_per_share,
+      pp.realized_profit_loss,
+      pp.last_updated,
+      u.base_currency
+     FROM portfolio_positions pp
+     JOIN users u ON pp.user_id = u.id
+     WHERE u.wallet_address = $1 AND pp.stock_symbol = $2`,
     [walletAddress, stockSymbol]
   );
 
@@ -284,16 +174,17 @@ export async function getStockPosition(walletAddress: string, stockSymbol: strin
   // Get transaction history for this stock
   const transactionsResult = await query(
     `SELECT
-      transaction_type,
-      quantity,
-      price_per_share,
-      total_value,
-      realized_pnl,
-      tx_hash,
-      created_at
-     FROM transactions
-     WHERE wallet_address = $1 AND stock_symbol = $2
-     ORDER BY created_at DESC`,
+      t.transaction_type,
+      t.quantity,
+      t.price_per_unit,
+      t.total_value,
+      t.realized_pnl,
+      t.tx_hash,
+      t.created_at
+     FROM transactions t
+     JOIN users u ON t.user_id = u.id
+     WHERE u.wallet_address = $1 AND t.stock_symbol = $2
+     ORDER BY t.created_at DESC`,
     [walletAddress, stockSymbol]
   );
 
@@ -308,7 +199,7 @@ export async function getStockPosition(walletAddress: string, stockSymbol: strin
     transactions: transactionsResult.rows.map(tx => ({
       type: tx.transaction_type,
       quantity: parseFloat(tx.quantity),
-      pricePerShare: tx.price_per_share ? parseFloat(tx.price_per_share) : null,
+      pricePerShare: tx.price_per_unit ? parseFloat(tx.price_per_unit) : null,
       totalValue: parseFloat(tx.total_value),
       realizedPnl: tx.realized_pnl ? parseFloat(tx.realized_pnl) : null,
       txHash: tx.tx_hash,
@@ -321,20 +212,21 @@ export async function getStockPosition(walletAddress: string, stockSymbol: strin
 export async function getUserTransactions(walletAddress: string, limit: number = 50) {
   const result = await query(
     `SELECT
-      transaction_type,
-      stock_symbol,
-      currency_symbol,
-      quantity,
-      price_per_share,
-      total_value,
-      realized_pnl,
-      base_currency,
-      tx_hash,
-      status,
-      created_at
-     FROM transactions
-     WHERE wallet_address = $1
-     ORDER BY created_at DESC
+      t.transaction_type,
+      t.stock_symbol,
+      t.currency_symbol,
+      t.quantity,
+      t.price_per_unit,
+      t.total_value,
+      t.realized_pnl,
+      t.tx_hash,
+      t.status,
+      t.created_at,
+      u.base_currency
+     FROM transactions t
+     JOIN users u ON t.user_id = u.id
+     WHERE u.wallet_address = $1
+     ORDER BY t.created_at DESC
      LIMIT $2`,
     [walletAddress, limit]
   );
@@ -344,7 +236,7 @@ export async function getUserTransactions(walletAddress: string, limit: number =
     stockSymbol: tx.stock_symbol,
     currencySymbol: tx.currency_symbol,
     quantity: parseFloat(tx.quantity),
-    pricePerShare: tx.price_per_share ? parseFloat(tx.price_per_share) : null,
+    pricePerShare: tx.price_per_unit ? parseFloat(tx.price_per_unit) : null,
     totalValue: parseFloat(tx.total_value),
     realizedPnl: tx.realized_pnl ? parseFloat(tx.realized_pnl) : null,
     baseCurrency: tx.base_currency,

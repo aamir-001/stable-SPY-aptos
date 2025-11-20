@@ -249,17 +249,60 @@ export default function PortfolioView({
 
                   {/* Right side - Value and P&L */}
                   <Box sx={{ textAlign: 'right' }}>
-                    <Typography
-                      sx={{
-                        fontWeight: 700,
-                        fontSize: '0.875rem',
-                        color: '#000000',
-                        fontFamily: "'Inter', sans-serif",
-                        mb: 0.5,
-                      }}
-                    >
-                      {getCurrencySymbol(position.baseCurrency)}{currentValue.toFixed(2)}
-                    </Typography>
+                    {/* Invested and Current Value - Side by Side */}
+                    <Box sx={{ display: 'flex', gap: 2, justifyContent: 'flex-end', mb: 0.5 }}>
+                      {/* Invested Amount */}
+                      <Box>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: '#999999',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: '0.65rem',
+                            display: 'block',
+                          }}
+                        >
+                          Invested
+                        </Typography>
+                        <Typography
+                          sx={{
+                            fontWeight: 600,
+                            fontSize: '0.75rem',
+                            color: '#666666',
+                            fontFamily: "'Inter', sans-serif",
+                          }}
+                        >
+                          {getCurrencySymbol(position.baseCurrency)}{position.totalCostBasis.toFixed(2)}
+                        </Typography>
+                      </Box>
+
+                      {/* Current Value */}
+                      <Box>
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: '#999999',
+                            fontFamily: "'Inter', sans-serif",
+                            fontSize: '0.65rem',
+                            display: 'block',
+                          }}
+                        >
+                          Current Value
+                        </Typography>
+                        <Typography
+                          sx={{
+                            fontWeight: 700,
+                            fontSize: '0.875rem',
+                            color: '#000000',
+                            fontFamily: "'Inter', sans-serif",
+                          }}
+                        >
+                          {getCurrencySymbol(position.baseCurrency)}{currentValue.toFixed(2)}
+                        </Typography>
+                      </Box>
+                    </Box>
+
+                    {/* P&L */}
                     {position.unrealizedPnl !== undefined && position.unrealizedPnl !== null && (
                       <Typography
                         sx={{
