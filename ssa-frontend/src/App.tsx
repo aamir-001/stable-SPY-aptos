@@ -2,39 +2,67 @@ import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
 import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip, CircularProgress } from "@mui/material";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import WalletButton from "./components/Wallet";
+import BalanceModal from "./components/BalanceModal";
+import BuyStockModal from "./components/BuyStockModal";
+import SellStockModal from "./components/SellStockModal";
+import CurrencyHeader from "./components/CurrencyHeader";
+import MintCurrencyModal from "./components/MintCurrencyModal";
+import PortfolioView from "./components/PortfolioView";
+import StockDetailView from "./components/StockDetailView";
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
 import type { StockQuote, StockData } from "./services/stockApi";
 import { getAccountAPTBalance } from "./utils/getAccountBalance";
-import { getINRBalance } from "./utils/getINRBalance";
-import { getCNYBalance } from "./utils/getCNYBalance";
-import { getEURBalance } from "./utils/getEURBalance";
-import axios from "axios";
+import { backendApi } from "./services/backendApi";
 
+// Stock symbols matching backend (GOOG, AAPL, TSLA, NVDA, HOOD)
 const stocks = [
-  { name: "Google", symbol: "GOOGC", alphaSymbol: "GOOGL" },
-  { name: "Apple", symbol: "APPL", alphaSymbol: "AAPL" },
+  { name: "Google", symbol: "GOOG", alphaSymbol: "GOOGL" },
+  { name: "Apple", symbol: "AAPL", alphaSymbol: "AAPL" },
   { name: "Tesla", symbol: "TSLA", alphaSymbol: "TSLA" },
   { name: "NVIDIA", symbol: "NVDA", alphaSymbol: "NVDA" },
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
 
-// Main content component that uses the wallet
-function MainContent() {
+// Home page component
+function HomePage() {
   const { account, connected } = useWallet();
-  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("USD");
+  const navigate = useNavigate();
+  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("INR");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
-  const [balanceCurrency, setBalanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
-  const [exchangeRates] = useState({ INR: 83.5, USD: 1.0, CNY: 7.2, EUR: 0.92 });
+  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
+  const [balanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
+  const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
+  const [sellStockModalOpen, setSellStockModalOpen] = useState(false);
+  const [mintModalOpen, setMintModalOpen] = useState(false);
   
+  // Hardcoded exchange rates (1 USD = ...)
+  const exchangeRates = { USD: 1.0, INR: 90.0, CNY: 7.2, EUR: 0.92 };
+
+  // Currency symbol helper
+  const getCurrencySymbol = (curr: string) => {
+    const symbols: Record<string, string> = {
+      USD: '$',
+      INR: '₹',
+      CNY: '¥',
+      EUR: '€',
+    };
+    return symbols[curr] || '$';
+  };
+
   // Balance states
-  const [aptBalance, setAptBalance] = useState<number | null>(null);
+  const [_aptBalance, setAptBalance] = useState<number | null>(null);
   const [inrBalance, setInrBalance] = useState<number | null>(null);
-  const [cnyBalance, setCnyBalance] = useState<number | null>(null);
-  const [eurBalance, setEurBalance] = useState<number | null>(null);
+  const [_cnyBalance, setCnyBalance] = useState<number | null>(null);
+  const [_eurBalance, setEurBalance] = useState<number | null>(null);
   const [loadingBalances, setLoadingBalances] = useState(false);
+
+  // Stock balance state
+  const [stockBalance, setStockBalance] = useState<number>(0);
+  const [loadingStockBalance, setLoadingStockBalance] = useState(false);
   
   // Stock data states
   const [stockQuotes, setStockQuotes] = useState<Record<string, StockQuote>>({});
@@ -42,75 +70,37 @@ function MainContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Handle exchange function
-  const handleExchange = async () => {
-    if (!connected || !account?.address) {
-      alert("Please connect your wallet first!");
-      return;
-    }
+  // Portfolio data state
+  const [portfolioPositions, setPortfolioPositions] = useState<any[]>([]);
+  const [portfolioSummary, setPortfolioSummary] = useState({
+    totalValue: 0,
+    totalCostBasis: 0,
+    totalUnrealizedPnl: 0,
+    totalPnlPercent: 0,
+  });
+  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
 
-    const currentQuote = stockQuotes[selectedStock.symbol];
-    const currentStockPrice = currentQuote?.price || 0;
-
-    if (!currentStockPrice || currentStockPrice === 0) {
-      alert("Stock price not available. Please try again.");
-      return;
-    }
-
-    const currentBalance = getCurrentBalance();
-    if (currentBalance <= 0) {
-      alert(`You don't have enough ${selectedCurrency} to buy stocks!`);
-      return;
-    }
-
-    const canBuy = currentStockPrice > 0 ? Math.floor(currentBalance / currentStockPrice) : 0;
-    if (canBuy <= 0) {
-      alert(`Insufficient balance to buy ${selectedStock.symbol}`);
-      return;
-    }
-
-    try {
-      console.log("Starting exchange...");
-      
-      const currencyAmountInSmallestUnit = Math.floor(currentStockPrice * Math.pow(10, 6));
-      const priceInSmallestUnit = Math.floor(currentStockPrice * Math.pow(10, 6));
-
-      const payload = {
-        user: account.address.toString(),
-        currency: selectedCurrency === "USD" ? "APT" : selectedCurrency,
-        stock: selectedStock.symbol,
-        currencyAmount: currencyAmountInSmallestUnit,
-        price: priceInSmallestUnit,
-      };
-
-      console.log("Sending buy request:", payload);
-
-      const response = await axios.post('http://localhost:3001/api/buy-stock', payload, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log("Buy response:", response.data);
-
-      if (response.data.success) {
-        alert(`Successfully bought ${selectedStock.symbol}! Transaction hash: ${response.data.tx.hash}`);
-        window.location.reload();
-      } else {
-        alert(`Failed to buy stock: ${response.data.error || "Unknown error"}`);
-      }
-    } catch (error: any) {
-      console.error("Exchange error:", error);
-      alert(`Error buying stock: ${error.response?.data?.error || error.message || "Unknown error"}`);
-    }
-  };
-
-  // Debug logs
+  // Fetch user's base currency from database when wallet connects
   useEffect(() => {
-    console.log("Connected:", connected);
-    console.log("Account:", account);
-    console.log("Account address:", account?.address);
-  }, [connected, account]);
+    const fetchUserBaseCurrency = async () => {
+      if (!connected || !account?.address) {
+        setSelectedCurrency("INR"); // Reset to default when disconnected
+        return;
+      }
+
+      try {
+        const userInfo = await backendApi.getUserInfo(account.address.toString());
+        if (userInfo.baseCurrency) {
+          setSelectedCurrency(userInfo.baseCurrency as "USD" | "INR" | "CNY" | "EUR");
+        }
+      } catch (error) {
+        console.error('Error fetching user base currency:', error);
+        // Keep default currency on error
+      }
+    };
+
+    fetchUserBaseCurrency();
+  }, [connected, account?.address]);
 
   // Load stock prices
   useEffect(() => {
@@ -154,13 +144,7 @@ function MainContent() {
   // Load balances when wallet connects
   useEffect(() => {
     const loadBalances = async () => {
-      console.log("=== Load Balances Effect ===");
-      console.log("Connected:", connected);
-      console.log("Account:", account);
-      console.log("Account address:", account?.address?.toString());
-
       if (!connected || !account?.address) {
-        console.log("No wallet connected or no address, clearing balances");
         setAptBalance(null);
         setInrBalance(null);
         setCnyBalance(null);
@@ -171,41 +155,25 @@ function MainContent() {
       setLoadingBalances(true);
       try {
         const addressString = account.address.toString();
-        console.log("Loading balances for address:", addressString);
-        
-        // Load all balances in parallel
-        const [apt, inr, cny, eur] = await Promise.all([
+
+        // Load all balances using backend API
+        const [apt, currencyBalances] = await Promise.all([
           getAccountAPTBalance({ accountAddress: addressString }).catch((e) => {
             console.error("APT balance error:", e);
             return 0;
           }),
-          getINRBalance({ accountAddress: addressString }).catch((e) => {
-            console.error("INR balance error:", e);
-            return 0;
-          }),
-          getCNYBalance({ accountAddress: addressString }).catch((e) => {
-            console.error("CNY balance error:", e);
-            return 0;
-          }),
-          getEURBalance({ accountAddress: addressString }).catch((e) => {
-            console.error("EUR balance error:", e);
-            return 0;
+          backendApi.getCurrencyBalances(addressString).catch((e) => {
+            console.error("Currency balances error:", e);
+            return { address: addressString, balances: { INR: 0, EUR: 0, CNY: 0 }, formatted: { INR: "₹0.00", EUR: "€0.00", CNY: "¥0.00" } };
           }),
         ]);
 
-        console.log("Raw balances - APT:", apt, "INR:", inr, "CNY:", cny, "EUR:", eur);
-        
         const convertedApt = apt / 100000000;
-        const convertedInr = inr / Math.pow(10, 6);
-        const convertedCny = cny / Math.pow(10, 6);
-        const convertedEur = eur / Math.pow(10, 6);
-        
+
         setAptBalance(convertedApt);
-        setInrBalance(convertedInr);
-        setCnyBalance(convertedCny);
-        setEurBalance(convertedEur);
-        
-        console.log("Converted balances - APT:", convertedApt, "INR:", convertedInr, "CNY:", convertedCny, "EUR:", convertedEur);
+        setInrBalance(currencyBalances.balances.INR);
+        setCnyBalance(currencyBalances.balances.CNY);
+        setEurBalance(currencyBalances.balances.EUR);
       } catch (error) {
         console.error("Error loading balances:", error);
       } finally {
@@ -219,56 +187,156 @@ function MainContent() {
     return () => clearInterval(interval);
   }, [connected, account?.address]);
 
-  const currentQuote = stockQuotes[selectedStock.symbol];
-  const currentStockPrice = currentQuote?.price || 0;
-  
-  // Get the actual balance for selected currency
-  const getCurrentBalance = (): number => {
-    console.log("Getting current balance for currency:", selectedCurrency);
-    console.log("Balances - APT:", aptBalance, "INR:", inrBalance, "CNY:", cnyBalance, "EUR:", eurBalance);
-    
-    if (selectedCurrency === "USD") {
-      const balance = aptBalance ? aptBalance * exchangeRates.USD : 0;
-      console.log("USD balance calculated:", balance);
-      return balance;
-    } else if (selectedCurrency === "INR") {
-      console.log("INR balance:", inrBalance);
-      return inrBalance || 0;
-    } else if (selectedCurrency === "CNY") {
-      console.log("CNY balance:", cnyBalance);
-      return cnyBalance || 0;
-    } else if (selectedCurrency === "EUR") {
-      console.log("EUR balance:", eurBalance);
-      return eurBalance || 0;
-    }
-    return 0;
+  // Load stock balance when wallet connects or stock changes, and poll every 5 seconds
+  useEffect(() => {
+    const loadStockBalance = async () => {
+      if (!connected || !account?.address) {
+        setStockBalance(0);
+        return;
+      }
+
+      setLoadingStockBalance(true);
+      try {
+        const balance = await backendApi.getStockBalance(selectedStock.symbol, account.address.toString());
+        setStockBalance(balance);
+      } catch (error) {
+        console.error("Error loading stock balance:", error);
+        setStockBalance(0);
+      } finally {
+        setLoadingStockBalance(false);
+      }
+    };
+
+    loadStockBalance();
+
+    // Auto-refresh stock balance every 5 seconds
+    const interval = setInterval(loadStockBalance, 5000);
+    return () => clearInterval(interval);
+  }, [connected, account?.address, selectedStock.symbol]);
+
+  // Load portfolio data from backend API
+  useEffect(() => {
+    const loadPortfolio = async () => {
+      if (!connected || !account?.address) {
+        setPortfolioPositions([]);
+        setPortfolioSummary({
+          totalValue: 0,
+          totalCostBasis: 0,
+          totalUnrealizedPnl: 0,
+          totalPnlPercent: 0,
+        });
+        return;
+      }
+
+      setLoadingPortfolio(true);
+      try {
+        const portfolioData = await backendApi.getPortfolio(account.address.toString());
+
+        setPortfolioPositions(portfolioData.positions);
+        setPortfolioSummary(portfolioData.summary);
+      } catch (error) {
+        console.error('Error loading portfolio:', error);
+        setPortfolioPositions([]);
+        setPortfolioSummary({
+          totalValue: 0,
+          totalCostBasis: 0,
+          totalUnrealizedPnl: 0,
+          totalPnlPercent: 0,
+        });
+      } finally {
+        setLoadingPortfolio(false);
+      }
+    };
+
+    loadPortfolio();
+
+    // Refresh portfolio every 10 seconds
+    const interval = setInterval(loadPortfolio, 10000);
+    return () => clearInterval(interval);
+  }, [connected, account?.address]);
+
+  // Handle stock click from portfolio - navigate to detail page
+  const handleStockClick = (stockSymbol: string) => {
+    navigate(`/stock/${stockSymbol}`);
   };
 
-  const currentBalance = getCurrentBalance();
-  const canBuy = currentStockPrice > 0 ? Math.floor(currentBalance / currentStockPrice) : 0;
+  const currentQuote = stockQuotes[selectedStock.symbol];
+  const currentStockPrice = currentQuote?.price || 0;
 
-  // Format chart data
+  // Convert USD price to selected currency
+  const convertPriceToSelectedCurrency = (priceInUSD: number): number => {
+    return priceInUSD * exchangeRates[selectedCurrency];
+  };
+
+  const currentStockPriceInSelectedCurrency = convertPriceToSelectedCurrency(currentStockPrice);
+
+  // Format chart data with selected currency conversion
   const chartData = intradayData.map((point) => ({
     time: new Date(point.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-    price: point.price,
+    price: convertPriceToSelectedCurrency(point.price),
   }));
+
+  const handleBalanceUpdate = () => {
+    // Reload balances when currency is minted
+    if (connected && account?.address) {
+      backendApi.getCurrencyBalances(account.address.toString())
+        .then((data) => {
+          setInrBalance(data.balances.INR);
+          setCnyBalance(data.balances.CNY);
+          setEurBalance(data.balances.EUR);
+        })
+        .catch((error) => {
+          console.error("Error refreshing balances:", error);
+        });
+    }
+  };
+
+  const handlePortfolioUpdate = async () => {
+    // Reload portfolio after buy/sell transactions
+    if (connected && account?.address) {
+      try {
+        const portfolioData = await backendApi.getPortfolio(account.address.toString());
+        setPortfolioPositions(portfolioData.positions);
+        setPortfolioSummary(portfolioData.summary);
+      } catch (error) {
+        console.error("Error refreshing portfolio:", error);
+      }
+    }
+  };
 
   return (
     <Box sx={{ minHeight: "100vh", bgcolor: "#ffffff", py: 3 }}>
       <WalletButton />
+
+      {/* Currency Balance Header */}
+      {connected && (
+        <CurrencyHeader
+          balance={inrBalance}
+          loading={loadingBalances}
+          onClick={() => setMintModalOpen(true)}
+        />
+      )}
+
+      {/* Mint Currency Modal */}
+      <MintCurrencyModal
+        open={mintModalOpen}
+        onClose={() => setMintModalOpen(false)}
+        onBalanceUpdate={handleBalanceUpdate}
+      />
+
       <Container maxWidth="xl">
         <Typography variant="h3" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
           TABDEEL
         </Typography>
 
-        {/* Stock Prices - Front and Center */}
+        {/* Stock Prices Chart - Top Section */}
         <Grid container spacing={3} sx={{ mb: 3 }}>
           <Grid size={{ xs: 12 }}>
             <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
               <CardContent sx={{ p: 4 }}>
                 <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
                   <Typography variant="h5" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    Stock Prices
+                    {selectedStock.name} ({selectedStock.alphaSymbol})
                   </Typography>
                   <FormControl sx={{ minWidth: 200 }}>
                     <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
@@ -297,6 +365,7 @@ function MainContent() {
                     </Typography>
                   </Box>
                 )}
+                
                 {loading ? (
                   <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
                     <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>Loading stock data...</Typography>
@@ -306,10 +375,14 @@ function MainContent() {
                     <Box sx={{ mb: 4 }}>
                       <Box sx={{ display: "flex", alignItems: "baseline", gap: 2, mb: 1 }}>
                         <Typography variant="h3" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Inter', sans-serif" }}>
-                          ${currentQuote.price.toFixed(2)}
+                          {selectedCurrency === "USD" && "$"}
+                          {selectedCurrency === "INR" && "₹"}
+                          {selectedCurrency === "CNY" && "¥"}
+                          {selectedCurrency === "EUR" && "€"}
+                          {convertPriceToSelectedCurrency(currentQuote.price).toFixed(2)}
                         </Typography>
                         <Chip
-                          label={`${currentQuote.change >= 0 ? "+" : ""}${currentQuote.change.toFixed(2)} (${currentQuote.changePercent >= 0 ? "+" : ""}${currentQuote.changePercent.toFixed(2)}%)`}
+                          label={`${currentQuote.change >= 0 ? "+" : ""}${(currentQuote.change * exchangeRates[selectedCurrency]).toFixed(2)} (${currentQuote.changePercent >= 0 ? "+" : ""}${currentQuote.changePercent.toFixed(2)}%)`}
                           sx={{
                             bgcolor: currentQuote.change >= 0 ? "#e8f5e9" : "#ffebee",
                             color: currentQuote.change >= 0 ? "#2e7d32" : "#d32f2f",
@@ -318,9 +391,6 @@ function MainContent() {
                           }}
                         />
                       </Box>
-                      <Typography variant="h6" sx={{ color: "#666666", fontWeight: 500, fontFamily: "'Inter', sans-serif" }}>
-                        {selectedStock.name} ({currentQuote.symbol})
-                      </Typography>
                     </Box>
 
                     {chartData.length > 0 ? (
@@ -332,10 +402,11 @@ function MainContent() {
                             stroke="#999999"
                             tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
                           />
-                          <YAxis 
+                          <YAxis
                             stroke="#999999"
                             tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                            domain={['dataMin - 1', 'dataMax + 1']}
+                            domain={[(dataMin: number) => dataMin * 0.999, (dataMax: number) => dataMax * 1.001]}
+                            tickFormatter={(value) => value.toFixed(2)}
                           />
                           <Tooltip
                             contentStyle={{
@@ -376,97 +447,149 @@ function MainContent() {
           </Grid>
         </Grid>
 
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12, md: 4 }}>
-            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                  Buying Power
-                </Typography>
-                
-                <FormControl fullWidth sx={{ mb: 3 }}>
-                  <InputLabel sx={{ color: "#666666" }}>Select Currency</InputLabel>
-                  <Select
-                    value={selectedCurrency}
-                    onChange={(e) => {
-                      const newCurrency = e.target.value as "USD" | "INR" | "CNY" | "EUR";
-                      console.log("Currency changed to:", newCurrency);
-                      setSelectedCurrency(newCurrency);
-                      // Map currency to balance currency for modal
-                      if (newCurrency === "USD") {
-                        setBalanceCurrency("APT");
-                      } else {
-                        setBalanceCurrency(newCurrency);
-                      }
-                    }}
-                    sx={{
-                      color: "#000000",
-                      "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
-                      "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
-                    }}
-                  >
-                    <MenuItem value="USD">USD (APT)</MenuItem>
-                    <MenuItem value="INR">INR</MenuItem>
-                    <MenuItem value="CNY">CNY</MenuItem>
-                    <MenuItem value="EUR">EUR</MenuItem>
-                  </Select>
-                </FormControl>
-
-                {loadingBalances ? (
-                  <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
-                    <CircularProgress size={24} sx={{ color: "#00C853" }} />
-                  </Box>
-                ) : (
-                  <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
-                    {currentBalance.toFixed(selectedCurrency === "USD" ? 4 : 6)} {selectedCurrency}
-                  </Typography>
-                )}
-              </CardContent>
-            </Card>
+        {/* Portfolio View - Below Chart */}
+        {connected && (
+          <Grid container spacing={3} sx={{ mb: 3 }}>
+            <Grid size={{ xs: 12 }}>
+              <PortfolioView
+                positions={portfolioPositions}
+                totalValue={portfolioSummary.totalValue}
+                totalCostBasis={portfolioSummary.totalCostBasis}
+                totalUnrealizedPnl={portfolioSummary.totalUnrealizedPnl}
+                totalPnlPercent={portfolioSummary.totalPnlPercent}
+                loading={loadingPortfolio}
+                currency={selectedCurrency}
+                onStockClick={handleStockClick}
+              />
+            </Grid>
           </Grid>
+        )}
 
-          <Grid size={{ xs: 12, md: 8 }}>
+        {/* Trade Stock Coins Section */}
+        <Grid container spacing={3}>
+          <Grid size={{ xs: 12 }}>
             <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
               <CardContent sx={{ p: 3 }}>
                 <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                  Purchase Stock Coins
+                  Trade Stock Coins
                 </Typography>
+
+                {/* Current Holdings */}
+                <Box sx={{ mb: 3, p: 2, bgcolor: "#f0fdf4", borderRadius: 2, border: "1px solid #00C853" }}>
+                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
+                    Your Holdings
+                  </Typography>
+                  {loadingStockBalance ? (
+                    <CircularProgress size={20} sx={{ color: "#00C853" }} />
+                  ) : (
+                    <>
+                      <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 700, mb: 1, fontFamily: "'Poppins', sans-serif" }}>
+                        {stockBalance.toFixed(6)} {selectedStock.symbol}
+                      </Typography>
+                      <Typography variant="body2" sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
+                        Total Value: {getCurrencySymbol(selectedCurrency)}{(stockBalance * currentStockPriceInSelectedCurrency).toFixed(2)}
+                      </Typography>
+                    </>
+                  )}
+                </Box>
+
+                {/* Current Price */}
                 <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 2 }}>
                   <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
                     Current Price
                   </Typography>
-                  <Typography variant="h5" sx={{ color: "#000000", fontWeight: 600, mb: 2, fontFamily: "'Inter', sans-serif" }}>
-                    ${currentStockPrice.toFixed(2)} {selectedCurrency}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
-                    You can buy
-                  </Typography>
-                  <Typography variant="h6" sx={{ color: "#00C853", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                    {canBuy} {selectedStock.symbol} coins
+                  <Typography variant="h5" sx={{ color: "#000000", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                    ₹{(currentStockPrice * exchangeRates.INR).toFixed(2)}
                   </Typography>
                 </Box>
-                <Button
-                  variant="contained"
-                  fullWidth
-                  onClick={() => handleExchange()}
-                  sx={{
-                    bgcolor: "#00C853",
-                    color: "#ffffff",
-                    textTransform: "none",
-                    fontWeight: 600,
-                    fontFamily: "'Inter', sans-serif",
-                    py: 1.5,
-                    "&:hover": { bgcolor: "#00A043" },
-                  }}
-                >
-                  Buy {selectedStock.symbol} Coins
-                </Button>
+
+                {/* Buy and Sell Buttons */}
+                <Box sx={{ display: "flex", gap: 2 }}>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => setBuyStockModalOpen(true)}
+                    disabled={!connected}
+                    sx={{
+                      bgcolor: "#00C853",
+                      color: "#ffffff",
+                      textTransform: "none",
+                      fontWeight: 600,
+                      fontFamily: "'Inter', sans-serif",
+                      py: 1.5,
+                      "&:hover": { bgcolor: "#00A043" },
+                      "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
+                    }}
+                  >
+                    {connected ? `Buy ${selectedStock.symbol}` : "Connect Wallet"}
+                  </Button>
+                  <Button
+                    variant="contained"
+                    fullWidth
+                    onClick={() => setSellStockModalOpen(true)}
+                    disabled={!connected || stockBalance <= 0}
+                    sx={{
+                      bgcolor: "#d32f2f",
+                      color: "#ffffff",
+                      textTransform: "none",
+                      fontWeight: 600,
+                      fontFamily: "'Inter', sans-serif",
+                      py: 1.5,
+                      "&:hover": { bgcolor: "#b71c1c" },
+                      "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
+                    }}
+                  >
+                    {connected ? `Sell ${selectedStock.symbol}` : "Connect Wallet"}
+                  </Button>
+                </Box>
               </CardContent>
             </Card>
           </Grid>
         </Grid>
       </Container>
+
+      <BalanceModal
+        open={balanceModalOpen}
+        onClose={() => setBalanceModalOpen(false)}
+        currency={balanceCurrency}
+      />
+      <BuyStockModal
+        open={buyStockModalOpen}
+        onClose={() => setBuyStockModalOpen(false)}
+        onBuySuccess={() => {
+          handleBalanceUpdate();
+          handlePortfolioUpdate();
+          if (account?.address) {
+            backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
+          }
+        }}
+      />
+      <SellStockModal
+        open={sellStockModalOpen}
+        onClose={() => setSellStockModalOpen(false)}
+        currentStock={selectedStock.symbol}
+        currentBalance={stockBalance}
+        onSellSuccess={() => {
+          handleBalanceUpdate();
+          handlePortfolioUpdate();
+          if (account?.address) {
+            backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
+          }
+        }}
+      />
     </Box>
+  );
+}
+
+// Main content with routing
+function MainContent() {
+  const { account } = useWallet();
+
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/stock/:stock" element={<StockDetailView walletAddress={account?.address?.toString()} />} />
+    </Routes>
   );
 }
 

@@ -1,52 +1,52 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import {
   Dialog,
   DialogContent,
   Typography,
   Box,
-  CircularProgress,
   Button,
   TextField,
   Alert,
+  CircularProgress,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import { backendApi } from "../services/backendApi";
 
-interface INRModalProps {
+interface SellStockModalProps {
   open: boolean;
   onClose: () => void;
+  currentStock: string;
+  currentBalance: number;
+  onSellSuccess?: () => void;
 }
 
-export default function INRModal({ open, onClose }: INRModalProps) {
-  const { account } = useWallet();
-  const [balance, setBalance] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [minting, setMinting] = useState(false);
+const stocks = [
+  { value: "GOOG", label: "Google (GOOG)" },
+  { value: "AAPL", label: "Apple (AAPL)" },
+  { value: "TSLA", label: "Tesla (TSLA)" },
+  { value: "NVDA", label: "NVIDIA (NVDA)" },
+  { value: "HOOD", label: "Robinhood (HOOD)" },
+];
+
+export default function SellStockModal({
+  open,
+  onClose,
+  currentStock,
+  currentBalance,
+  onSellSuccess
+}: SellStockModalProps) {
+  const { account, connected } = useWallet();
+  const [selectedStock, setSelectedStock] = useState(currentStock);
+  const [amount, setAmount] = useState("");
+  const [selling, setSelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [amount, setAmount] = useState<string>("");
 
-  useEffect(() => {
-    if (open && account?.address) {
-      fetchBalance();
-    }
-  }, [open, account?.address]);
-
-  const fetchBalance = async () => {
-    if (!account?.address) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const bal = await backendApi.getCurrencyBalance('INR', account.address.toString());
-      setBalance(bal);
-    } catch (err: any) {
-      setError(err.message || "Failed to fetch balance");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleMint = async () => {
+  const handleSell = async () => {
     if (!account?.address || !amount) {
       setError("Please enter an amount");
       return;
@@ -58,23 +58,33 @@ export default function INRModal({ open, onClose }: INRModalProps) {
       return;
     }
 
-    setMinting(true);
+    if (amountNum > currentBalance) {
+      setError(`You only have ${currentBalance.toFixed(6)} ${selectedStock} coins`);
+      return;
+    }
+
+    setSelling(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const result = await backendApi.mintCurrency({
-        currency: 'INR',
+      const result = await backendApi.sellStock({
         userAddress: account.address.toString(),
+        stock: selectedStock,
         amount: amountNum,
       });
-      setSuccess(`Minted ${result.amount} INR successfully! Hash: ${result.txHash.substring(0, 10)}...`);
+
+      setSuccess(
+        `Successfully sold ${result.stocksSold} ${selectedStock} for ₹${result.totalReceived.toFixed(2)}!`
+      );
       setAmount("");
-      await fetchBalance(); // Refresh balance
+      if (onSellSuccess) {
+        onSellSuccess();
+      }
     } catch (err: any) {
-      setError(err.message || "Failed to mint INR");
+      setError(err.message || "Failed to sell stock");
     } finally {
-      setMinting(false);
+      setSelling(false);
     }
   };
 
@@ -88,43 +98,62 @@ export default function INRModal({ open, onClose }: INRModalProps) {
           borderRadius: 2,
           boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
           border: "1px solid #e0e0e0",
-          minWidth: 450,
+          minWidth: 500,
         },
       }}
     >
       <DialogContent sx={{ p: 3 }}>
         <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-          INR Coin
+          Sell Stock Coins
         </Typography>
 
-        {/* Balance Display */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontWeight: 500 }}>
-            Your INR Balance
+        {/* Stock Selection */}
+        <FormControl fullWidth sx={{ mb: 2 }}>
+          <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
+          <Select
+            value={selectedStock}
+            onChange={(e) => setSelectedStock(e.target.value)}
+            disabled={selling}
+            sx={{
+              color: "#000000",
+              "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
+              "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
+            }}
+          >
+            {stocks.map((stock) => (
+              <MenuItem key={stock.value} value={stock.value}>
+                {stock.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+
+        {/* Current Balance */}
+        <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 1 }}>
+          <Typography variant="body2" sx={{ color: "#666666", mb: 0.5 }}>
+            Your Balance
           </Typography>
-          {loading ? (
-            <Box display="flex" justifyContent="center" p={2}>
-              <CircularProgress size={24} sx={{ color: "#00C853" }} />
-            </Box>
-          ) : (
-            <Typography variant="h4" sx={{ color: "#00C853", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-              {balance !== null ? balance.toFixed(6) : "0.000000"} INR
-            </Typography>
-          )}
+          <Typography variant="h6" sx={{ color: "#00C853", fontWeight: 600 }}>
+            {currentBalance.toFixed(6)} {selectedStock}
+          </Typography>
         </Box>
 
-        {/* Mint Section */}
+        {/* Amount Input */}
         <Box sx={{ mb: 2 }}>
           <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontWeight: 500 }}>
-            Amount to Mint (INR)
+            Amount to Sell (in {selectedStock} tokens)
           </Typography>
           <TextField
             fullWidth
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            placeholder="0.00"
-            disabled={minting || !account}
+            placeholder="0.000000"
+            disabled={selling || !connected}
+            inputProps={{
+              step: "0.000001",
+              min: "0",
+            }}
             sx={{
               "& .MuiOutlinedInput-root": {
                 color: "#000000",
@@ -153,8 +182,8 @@ export default function INRModal({ open, onClose }: INRModalProps) {
           <Button
             variant="outlined"
             onClick={onClose}
+            fullWidth
             sx={{
-              flex: 1,
               borderColor: "#e0e0e0",
               color: "#666666",
               textTransform: "none",
@@ -166,20 +195,20 @@ export default function INRModal({ open, onClose }: INRModalProps) {
           </Button>
           <Button
             variant="contained"
-            onClick={handleMint}
-            disabled={minting || !account || !amount}
+            onClick={handleSell}
+            disabled={selling || !connected || !amount || parseFloat(amount) <= 0}
+            fullWidth
             sx={{
-              flex: 1,
-              bgcolor: "#00C853",
+              bgcolor: "#d32f2f",
               color: "#ffffff",
               textTransform: "none",
               fontWeight: 600,
               fontFamily: "'Inter', sans-serif",
-              "&:hover": { bgcolor: "#00A043" },
+              "&:hover": { bgcolor: "#b71c1c" },
               "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
             }}
           >
-            {minting ? <CircularProgress size={20} sx={{ color: "#ffffff" }} /> : "Mint INR"}
+            {selling ? <CircularProgress size={20} sx={{ color: "#ffffff" }} /> : "Sell Stock"}
           </Button>
         </Box>
       </DialogContent>

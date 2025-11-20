@@ -10,7 +10,7 @@ module my_addr::EURCoin {
     use std::option;
 
     const E_NOT_ADMIN: u64 = 1;
-    const ASSET_SYMBOL: vector<u8> = b"eurc";
+    const ASSET_SYMBOL: vector<u8> = b"EUR";
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
     struct ManagedFungibleAsset has key {
@@ -26,10 +26,10 @@ module my_addr::EURCoin {
         primary_fungible_store::create_primary_store_enabled_fungible_asset(
             constructor_ref,
             option::none(),
-            utf8(b"EURCoin"),
+            utf8(b"Euro Coin"),
             utf8(ASSET_SYMBOL),
             6,
-            utf8(b"https://example.com/eurc.png"),
+            utf8(b"https://example.com/eur-icon.png"),
             utf8(b"https://example.com"),
         );
 
@@ -61,14 +61,14 @@ module my_addr::EURCoin {
         primary_fungible_store::balance(account, asset)
     }
 
-    public entry fun mint_eur(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun mint_coins(admin: &signer, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
         let fa: FungibleAsset = fungible_asset::mint(&managed.mint_ref, amount);
         primary_fungible_store::deposit(to, fa);
     }
 
-    public entry fun burn_eur(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun burn_coins(admin: &signer, from: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -81,7 +81,7 @@ module my_addr::EURCoin {
         fungible_asset::burn(&managed.burn_ref, fa);
     }
 
-    public entry fun transfer_eur(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
+    public entry fun transfer_coins(admin: &signer, from: address, to: address, amount: u64) acquires ManagedFungibleAsset {
         let asset = get_metadata();
         let managed = ensure_admin_and_borrow(admin, asset);
 
@@ -116,6 +116,7 @@ module my_addr::EURCoin {
     public entry fun initialize(admin: &signer) {
         let metadata_address = object::create_object_address(&@my_addr, ASSET_SYMBOL);
         assert!(!object::object_exists<Metadata>(metadata_address), 1);
+        
         init_module(admin);
     }
 }
