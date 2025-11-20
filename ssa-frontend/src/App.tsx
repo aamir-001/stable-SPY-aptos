@@ -2,6 +2,7 @@ import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
 import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip, CircularProgress } from "@mui/material";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import WalletButton from "./components/Wallet";
 import BalanceModal from "./components/BalanceModal";
 import BuyStockModal from "./components/BuyStockModal";
@@ -9,6 +10,7 @@ import SellStockModal from "./components/SellStockModal";
 import CurrencyHeader from "./components/CurrencyHeader";
 import MintCurrencyModal from "./components/MintCurrencyModal";
 import PortfolioView from "./components/PortfolioView";
+import StockDetailView from "./components/StockDetailView";
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
@@ -25,9 +27,10 @@ const stocks = [
   { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
 ];
 
-// Main content component that uses the wallet
-function MainContent() {
+// Home page component
+function HomePage() {
   const { account, connected } = useWallet();
+  const navigate = useNavigate();
   const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("INR");
   const [selectedStock, setSelectedStock] = useState(stocks[0]);
   const [balanceModalOpen, setBalanceModalOpen] = useState(false);
@@ -252,14 +255,9 @@ function MainContent() {
     return () => clearInterval(interval);
   }, [connected, account?.address]);
 
-  // Handle stock click from portfolio
+  // Handle stock click from portfolio - navigate to detail page
   const handleStockClick = (stockSymbol: string) => {
-    const stock = stocks.find(s => s.symbol === stockSymbol);
-    if (stock) {
-      setSelectedStock(stock);
-      // Scroll to top to see the chart
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    }
+    navigate(`/stock/${stockSymbol}`);
   };
 
   const currentQuote = stockQuotes[selectedStock.symbol];
@@ -580,6 +578,18 @@ function MainContent() {
         }}
       />
     </Box>
+  );
+}
+
+// Main content with routing
+function MainContent() {
+  const { account } = useWallet();
+
+  return (
+    <Routes>
+      <Route path="/" element={<HomePage />} />
+      <Route path="/stock/:stock" element={<StockDetailView walletAddress={account?.address?.toString()} />} />
+    </Routes>
   );
 }
 
