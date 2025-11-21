@@ -141,7 +141,7 @@ export async function burnCurrency(
 }
 
 /**
- * Get user's currency balance
+ * Get user's currency balance from database
  */
 export async function getCurrencyBalance(
   currency: CurrencyType,
@@ -157,15 +157,27 @@ export async function getCurrencyBalance(
       throw new Error(`Unsupported currency: ${currency}`);
     }
 
-    const balance = await aptos.view({
-      payload: {
-        function: `${process.env.MY_ADDR}::${moduleName}::balance_of`,
-        functionArguments: [userAddress],
-      },
-    });
+    console.log(`[GET ${currency} BALANCE] Fetching balance from database for ${userAddress}`);
 
-    const balanceValue = Number(balance[0]);
-    return balanceValue / 1_000_000;
+    // Import query function
+    const { query } = await import("../db/database.js");
+
+    const result = await query(
+      `SELECT balance
+       FROM currency_balances cb
+       JOIN users u ON cb.user_id = u.id
+       WHERE u.wallet_address = $1 AND cb.currency_symbol = $2`,
+      [userAddress, currency]
+    );
+
+    if (result.rows.length === 0) {
+      console.log(`[GET ${currency} BALANCE] No balance found, returning 0`);
+      return 0;
+    }
+
+    const balance = parseFloat(result.rows[0].balance);
+    console.log(`[GET ${currency} BALANCE] Balance from DB: ${balance}`);
+    return balance;
   } catch (err: any) {
     console.error(`[GET ${currency} BALANCE] Error:`, err.message);
     return 0;

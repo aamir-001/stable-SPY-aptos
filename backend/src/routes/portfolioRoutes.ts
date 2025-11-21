@@ -45,7 +45,7 @@ router.get('/:address', async (req, res) => {
 
           // Get database position for cost basis (if exists)
           const dbPosition = positionMap.get(stockSymbol);
-          const totalCostBasis = dbPosition?.totalCostBasis || 0;
+          const stockInvestment = dbPosition?.stockInvestment || 0; // Excludes fees - for display
           const averageCostPerShare = dbPosition?.averageCostPerShare || 0;
           const realizedProfitLoss = dbPosition?.realizedProfitLoss || 0;
 
@@ -53,18 +53,18 @@ router.get('/:address', async (req, res) => {
           const currentPrice = await getStockPriceFromYahoo(stockSymbol);
           const currentPriceInBaseCurrency = currentPrice * exchangeRate;
 
-          // Calculate unrealized P&L using on-chain balance
+          // Calculate unrealized P&L relative to stock investment (excluding fees)
           const currentValue = onChainBalance * currentPriceInBaseCurrency;
-          const unrealizedPnl = currentValue - totalCostBasis;
+          const unrealizedPnl = currentValue - stockInvestment;
           const unrealizedPnlPercent =
-            totalCostBasis > 0 ? (unrealizedPnl / totalCostBasis) * 100 : 0;
+            stockInvestment > 0 ? (unrealizedPnl / stockInvestment) * 100 : 0;
 
           return {
             stockSymbol,
             currentQuantity: onChainBalance, // Use on-chain balance as source of truth
             currentPrice: currentPriceInBaseCurrency,
             currentValue: currentValue,
-            totalCostBasis: totalCostBasis,
+            totalCostBasis: stockInvestment, // Display: amount invested in stocks (no fees)
             averageCostPerShare: averageCostPerShare,
             unrealizedPnl: unrealizedPnl,
             unrealizedPnlPercent: unrealizedPnlPercent,
@@ -140,11 +140,18 @@ router.get('/:address/stock/:stock', async (req, res) => {
     const currentPrice = await getStockPriceFromYahoo(stock.toUpperCase());
     const currentPriceInBaseCurrency = currentPrice * exchangeRate;
 
-    // Calculate unrealized P&L
+    // Calculate stock investment (excluding fees) for fair P&L comparison
+    const totalFees = position.transactions
+      .filter((tx) => tx.type === 'BUY')
+      .reduce((sum, tx) => sum + (tx.feeAmount || 0), 0);
+
+    const stockInvestment = position.totalCostBasis - totalFees;
+
+    // Calculate unrealized P&L (relative to stock investment, excluding fees)
     const currentValue = position.currentQuantity * currentPriceInBaseCurrency;
-    const unrealizedPnl = currentValue - position.totalCostBasis;
+    const unrealizedPnl = currentValue - stockInvestment;
     const unrealizedPnlPercent =
-      position.totalCostBasis > 0 ? (unrealizedPnl / position.totalCostBasis) * 100 : 0;
+      stockInvestment > 0 ? (unrealizedPnl / stockInvestment) * 100 : 0;
 
     // Calculate total cost including sold shares for overall return %
     const totalHistoricalCost = position.transactions
@@ -161,7 +168,7 @@ router.get('/:address/stock/:stock', async (req, res) => {
       position: {
         currentQuantity: position.currentQuantity,
         currentValue: currentValue,
-        totalCostBasis: position.totalCostBasis,
+        totalCostBasis: stockInvestment, // Display: stock investment excluding fees
         averageCostPerShare: position.averageCostPerShare,
       },
       pnl: {

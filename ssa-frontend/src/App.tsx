@@ -1,57 +1,50 @@
 import { AptosWalletAdapterProvider } from "@aptos-labs/wallet-adapter-react";
 import { Network } from "@aptos-labs/ts-sdk";
-import { Box, Container, Grid, Card, CardContent, Typography, Button, Select, MenuItem, FormControl, InputLabel, Chip, CircularProgress } from "@mui/material";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
+import { Box, Container, Grid, Card, CardContent, Typography, TextField, InputAdornment, Avatar, Chip } from "@mui/material";
 import { Routes, Route, useNavigate } from "react-router-dom";
+import { Search, TrendingUp, TrendingDown, Wallet } from "lucide-react";
 import WalletButton from "./components/Wallet";
-import BalanceModal from "./components/BalanceModal";
-import BuyStockModal from "./components/BuyStockModal";
-import SellStockModal from "./components/SellStockModal";
 import CurrencyHeader from "./components/CurrencyHeader";
 import MintCurrencyModal from "./components/MintCurrencyModal";
-import PortfolioView from "./components/PortfolioView";
 import StockDetailView from "./components/StockDetailView";
 import { useState, useEffect } from "react";
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { stockApi } from "./services/stockApi";
-import type { StockQuote, StockData } from "./services/stockApi";
+import type { StockQuote } from "./services/stockApi";
 import { getAccountAPTBalance } from "./utils/getAccountBalance";
 import { backendApi } from "./services/backendApi";
 
 // Stock symbols matching backend (GOOG, AAPL, TSLA, NVDA, HOOD)
 const stocks = [
-  { name: "Google", symbol: "GOOG", alphaSymbol: "GOOGL" },
-  { name: "Apple", symbol: "AAPL", alphaSymbol: "AAPL" },
-  { name: "Tesla", symbol: "TSLA", alphaSymbol: "TSLA" },
-  { name: "NVIDIA", symbol: "NVDA", alphaSymbol: "NVDA" },
-  { name: "Robinhood", symbol: "HOOD", alphaSymbol: "HOOD" },
+  { name: "Google", symbol: "GOOG", logo: "https://logo.clearbit.com/google.com" },
+  { name: "Apple", symbol: "AAPL", logo: "https://logo.clearbit.com/apple.com" },
+  { name: "Tesla", symbol: "TSLA", logo: "https://logo.clearbit.com/tesla.com" },
+  { name: "NVIDIA", symbol: "NVDA", logo: "https://logo.clearbit.com/nvidia.com" },
+  { name: "Robinhood", symbol: "HOOD", logo: "https://logo.clearbit.com/robinhood.com" },
+];
+
+// Dummy data for gainers and losers
+const dummyGainers = [
+  { name: "Amazon", symbol: "AMZN", price: 18500.50, changePercent: 4.25, logo: "https://logo.clearbit.com/amazon.com" },
+  { name: "Meta", symbol: "META", price: 52340.80, changePercent: 3.12, logo: "https://logo.clearbit.com/meta.com" },
+  { name: "Netflix", symbol: "NFLX", price: 63210.20, changePercent: 2.87, logo: "https://logo.clearbit.com/netflix.com" },
+];
+
+const dummyLosers = [
+  { name: "AMD", symbol: "AMD", price: 12450.30, changePercent: -3.54, logo: "https://logo.clearbit.com/amd.com" },
+  { name: "Intel", symbol: "INTC", price: 1980.60, changePercent: -2.89, logo: "https://logo.clearbit.com/intel.com" },
+  { name: "Snap", symbol: "SNAP", price: 890.45, changePercent: -2.15, logo: "https://logo.clearbit.com/snap.com" },
 ];
 
 // Home page component
 function HomePage() {
   const { account, connected } = useWallet();
   const navigate = useNavigate();
-  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "INR" | "CNY" | "EUR">("INR");
-  const [selectedStock, setSelectedStock] = useState(stocks[0]);
-  const [balanceModalOpen, setBalanceModalOpen] = useState(false);
-  const [balanceCurrency] = useState<"APT" | "INR" | "CNY" | "EUR">("APT");
-  const [buyStockModalOpen, setBuyStockModalOpen] = useState(false);
-  const [sellStockModalOpen, setSellStockModalOpen] = useState(false);
   const [mintModalOpen, setMintModalOpen] = useState(false);
-  
+  const [searchQuery, setSearchQuery] = useState("");
+
   // Hardcoded exchange rates (1 USD = ...)
   const exchangeRates = { USD: 1.0, INR: 90.0, CNY: 7.2, EUR: 0.92 };
-
-  // Currency symbol helper
-  const getCurrencySymbol = (curr: string) => {
-    const symbols: Record<string, string> = {
-      USD: '$',
-      INR: '₹',
-      CNY: '¥',
-      EUR: '€',
-    };
-    return symbols[curr] || '$';
-  };
 
   // Balance states
   const [_aptBalance, setAptBalance] = useState<number | null>(null);
@@ -60,53 +53,17 @@ function HomePage() {
   const [_eurBalance, setEurBalance] = useState<number | null>(null);
   const [loadingBalances, setLoadingBalances] = useState(false);
 
-  // Stock balance state
-  const [stockBalance, setStockBalance] = useState<number>(0);
-  const [loadingStockBalance, setLoadingStockBalance] = useState(false);
-  
   // Stock data states
   const [stockQuotes, setStockQuotes] = useState<Record<string, StockQuote>>({});
-  const [intradayData, setIntradayData] = useState<StockData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Portfolio data state
   const [portfolioPositions, setPortfolioPositions] = useState<any[]>([]);
-  const [portfolioSummary, setPortfolioSummary] = useState({
-    totalValue: 0,
-    totalCostBasis: 0,
-    totalUnrealizedPnl: 0,
-    totalPnlPercent: 0,
-  });
-  const [loadingPortfolio, setLoadingPortfolio] = useState(false);
-
-  // Fetch user's base currency from database when wallet connects
-  useEffect(() => {
-    const fetchUserBaseCurrency = async () => {
-      if (!connected || !account?.address) {
-        setSelectedCurrency("INR"); // Reset to default when disconnected
-        return;
-      }
-
-      try {
-        const userInfo = await backendApi.getUserInfo(account.address.toString());
-        if (userInfo.baseCurrency) {
-          setSelectedCurrency(userInfo.baseCurrency as "USD" | "INR" | "CNY" | "EUR");
-        }
-      } catch (error) {
-        console.error('Error fetching user base currency:', error);
-        // Keep default currency on error
-      }
-    };
-
-    fetchUserBaseCurrency();
-  }, [connected, account?.address]);
 
   // Load stock prices
   useEffect(() => {
     const loadStockPrices = async () => {
       setLoading(true);
-      setError(null);
       try {
         const quotes: Record<string, StockQuote> = {};
         for (const stock of stocks) {
@@ -115,31 +72,18 @@ function HomePage() {
             quotes[stock.symbol] = quote;
           }
         }
-        if (Object.keys(quotes).length === 0) {
-          setError("Unable to fetch stock data. Using fallback data.");
-        }
         setStockQuotes(quotes);
       } catch (error: any) {
         console.error("Error loading stock prices:", error);
-        setError(`Error loading stock prices: ${error.message || "Unknown error"}`);
       } finally {
         setLoading(false);
       }
     };
 
     loadStockPrices();
-    const interval = setInterval(loadStockPrices, 60000); // Update every minute
+    const interval = setInterval(loadStockPrices, 60000);
     return () => clearInterval(interval);
   }, []);
-
-  // Load intraday data when stock changes
-  useEffect(() => {
-    const loadIntradayData = async () => {
-      const data = await stockApi.getIntradayData(selectedStock.symbol);
-      setIntradayData(data);
-    };
-    loadIntradayData();
-  }, [selectedStock]);
 
   // Load balances when wallet connects
   useEffect(() => {
@@ -156,21 +100,16 @@ function HomePage() {
       try {
         const addressString = account.address.toString();
 
-        // Load all balances using backend API
         const [apt, currencyBalances] = await Promise.all([
-          getAccountAPTBalance({ accountAddress: addressString }).catch((e) => {
-            console.error("APT balance error:", e);
-            return 0;
-          }),
-          backendApi.getCurrencyBalances(addressString).catch((e) => {
-            console.error("Currency balances error:", e);
-            return { address: addressString, balances: { INR: 0, EUR: 0, CNY: 0 }, formatted: { INR: "₹0.00", EUR: "€0.00", CNY: "¥0.00" } };
-          }),
+          getAccountAPTBalance({ accountAddress: addressString }).catch(() => 0),
+          backendApi.getCurrencyBalances(addressString).catch(() => ({
+            address: addressString,
+            balances: { INR: 0, EUR: 0, CNY: 0 },
+            formatted: { INR: "₹0.00", EUR: "€0.00", CNY: "¥0.00" },
+          })),
         ]);
 
-        const convertedApt = apt / 100000000;
-
-        setAptBalance(convertedApt);
+        setAptBalance(apt / 100000000);
         setInrBalance(currencyBalances.balances.INR);
         setCnyBalance(currencyBalances.balances.CNY);
         setEurBalance(currencyBalances.balances.EUR);
@@ -182,102 +121,36 @@ function HomePage() {
     };
 
     loadBalances();
-    // Refresh balances every 30 seconds
     const interval = setInterval(loadBalances, 30000);
     return () => clearInterval(interval);
   }, [connected, account?.address]);
 
-  // Load stock balance when wallet connects or stock changes, and poll every 5 seconds
-  useEffect(() => {
-    const loadStockBalance = async () => {
-      if (!connected || !account?.address) {
-        setStockBalance(0);
-        return;
-      }
-
-      setLoadingStockBalance(true);
-      try {
-        const balance = await backendApi.getStockBalance(selectedStock.symbol, account.address.toString());
-        setStockBalance(balance);
-      } catch (error) {
-        console.error("Error loading stock balance:", error);
-        setStockBalance(0);
-      } finally {
-        setLoadingStockBalance(false);
-      }
-    };
-
-    loadStockBalance();
-
-    // Auto-refresh stock balance every 5 seconds
-    const interval = setInterval(loadStockBalance, 5000);
-    return () => clearInterval(interval);
-  }, [connected, account?.address, selectedStock.symbol]);
-
-  // Load portfolio data from backend API
+  // Load portfolio data
   useEffect(() => {
     const loadPortfolio = async () => {
       if (!connected || !account?.address) {
         setPortfolioPositions([]);
-        setPortfolioSummary({
-          totalValue: 0,
-          totalCostBasis: 0,
-          totalUnrealizedPnl: 0,
-          totalPnlPercent: 0,
-        });
         return;
       }
 
-      setLoadingPortfolio(true);
       try {
         const portfolioData = await backendApi.getPortfolio(account.address.toString());
-
         setPortfolioPositions(portfolioData.positions);
-        setPortfolioSummary(portfolioData.summary);
       } catch (error) {
-        console.error('Error loading portfolio:', error);
-        setPortfolioPositions([]);
-        setPortfolioSummary({
-          totalValue: 0,
-          totalCostBasis: 0,
-          totalUnrealizedPnl: 0,
-          totalPnlPercent: 0,
-        });
-      } finally {
-        setLoadingPortfolio(false);
+        console.error("Error loading portfolio:", error);
       }
     };
 
     loadPortfolio();
-
-    // Refresh portfolio every 10 seconds
     const interval = setInterval(loadPortfolio, 10000);
     return () => clearInterval(interval);
   }, [connected, account?.address]);
 
-  // Handle stock click from portfolio - navigate to detail page
   const handleStockClick = (stockSymbol: string) => {
     navigate(`/stock/${stockSymbol}`);
   };
 
-  const currentQuote = stockQuotes[selectedStock.symbol];
-  const currentStockPrice = currentQuote?.price || 0;
-
-  // Convert USD price to selected currency
-  const convertPriceToSelectedCurrency = (priceInUSD: number): number => {
-    return priceInUSD * exchangeRates[selectedCurrency];
-  };
-
-  const currentStockPriceInSelectedCurrency = convertPriceToSelectedCurrency(currentStockPrice);
-
-  // Format chart data with selected currency conversion
-  const chartData = intradayData.map((point) => ({
-    time: new Date(point.date).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
-    price: convertPriceToSelectedCurrency(point.price),
-  }));
-
   const handleBalanceUpdate = () => {
-    // Reload balances when currency is minted
     if (connected && account?.address) {
       backendApi.getCurrencyBalances(account.address.toString())
         .then((data) => {
@@ -285,27 +158,130 @@ function HomePage() {
           setCnyBalance(data.balances.CNY);
           setEurBalance(data.balances.EUR);
         })
-        .catch((error) => {
-          console.error("Error refreshing balances:", error);
-        });
+        .catch(console.error);
     }
   };
 
-  const handlePortfolioUpdate = async () => {
-    // Reload portfolio after buy/sell transactions
-    if (connected && account?.address) {
-      try {
-        const portfolioData = await backendApi.getPortfolio(account.address.toString());
-        setPortfolioPositions(portfolioData.positions);
-        setPortfolioSummary(portfolioData.summary);
-      } catch (error) {
-        console.error("Error refreshing portfolio:", error);
-      }
-    }
+  // Filter stocks based on search
+  const filteredStocks = stocks.filter(
+    (stock) =>
+      stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Stock card component for all tokens
+  const StockCard = ({ stock, quote }: { stock: typeof stocks[0]; quote?: StockQuote }) => {
+    const priceInINR = (quote?.price || 0) * exchangeRates.INR;
+    const changePercent = quote?.changePercent || 0;
+    const isPositive = changePercent >= 0;
+
+    return (
+      <Card
+        onClick={() => handleStockClick(stock.symbol)}
+        sx={{
+          cursor: "pointer",
+          borderRadius: 3,
+          boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+          border: "1px solid #e8e8e8",
+          transition: "all 0.2s ease",
+          "&:hover": {
+            transform: "translateY(-4px)",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+            borderColor: "#00C853",
+          },
+        }}
+      >
+        <CardContent sx={{ p: 2.5 }}>
+          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+            <Avatar
+              src={stock.logo}
+              sx={{ width: 44, height: 44, mr: 1.5, bgcolor: "#f5f5f5" }}
+            >
+              {stock.symbol[0]}
+            </Avatar>
+            <Box sx={{ flex: 1 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif", lineHeight: 1.2 }}>
+                {stock.name}
+              </Typography>
+              <Typography variant="body2" sx={{ color: "#666", fontFamily: "'Inter', sans-serif" }}>
+                {stock.symbol}
+              </Typography>
+            </Box>
+          </Box>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Inter', sans-serif" }}>
+              ₹{priceInINR.toFixed(2)}
+            </Typography>
+            <Chip
+              icon={isPositive ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+              label={`${isPositive ? "+" : ""}${changePercent.toFixed(2)}%`}
+              size="small"
+              sx={{
+                bgcolor: isPositive ? "#e8f5e9" : "#ffebee",
+                color: isPositive ? "#2e7d32" : "#d32f2f",
+                fontWeight: 600,
+                fontSize: "0.75rem",
+                "& .MuiChip-icon": { color: "inherit" },
+              }}
+            />
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // Mini card for gainers/losers
+  const MiniStockCard = ({ item, isDummy = false }: { item: any; isDummy?: boolean }) => {
+    const isPositive = item.changePercent >= 0;
+
+    return (
+      <Card
+        sx={{
+          borderRadius: 2,
+          boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+          border: "1px solid #f0f0f0",
+          opacity: isDummy ? 0.7 : 1,
+        }}
+      >
+        <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <Avatar
+              src={item.logo}
+              sx={{ width: 36, height: 36, mr: 1.5, bgcolor: "#f5f5f5" }}
+            >
+              {item.symbol[0]}
+            </Avatar>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                {item.symbol}
+              </Typography>
+              <Typography variant="caption" sx={{ color: "#999", fontFamily: "'Inter', sans-serif" }}>
+                {item.name}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: "right" }}>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                ₹{item.price.toFixed(2)}
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{
+                  color: isPositive ? "#2e7d32" : "#d32f2f",
+                  fontWeight: 600,
+                  fontFamily: "'Inter', sans-serif",
+                }}
+              >
+                {isPositive ? "+" : ""}{item.changePercent.toFixed(2)}%
+              </Typography>
+            </Box>
+          </Box>
+        </CardContent>
+      </Card>
+    );
   };
 
   return (
-    <Box sx={{ minHeight: "100vh", bgcolor: "#ffffff", py: 3 }}>
+    <Box sx={{ minHeight: "100vh", bgcolor: "#fafafa", pb: 4 }}>
       <WalletButton />
 
       {/* Currency Balance Header */}
@@ -324,259 +300,221 @@ function HomePage() {
         onBalanceUpdate={handleBalanceUpdate}
       />
 
-      <Container maxWidth="xl">
-        <Typography variant="h3" sx={{ mb: 4, textAlign: "center", fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-          TABDEEL
-        </Typography>
+      <Container maxWidth="xl" sx={{ pt: 3 }}>
+        {/* Header */}
+        <Box sx={{ textAlign: "center", mb: 4 }}>
+          <Typography
+            variant="h3"
+            sx={{
+              fontWeight: 800,
+              color: "#1a1a1a",
+              fontFamily: "'Poppins', sans-serif",
+              mb: 1,
+            }}
+          >
+            TABDEEL
+          </Typography>
+          <Typography variant="body1" sx={{ color: "#666", fontFamily: "'Inter', sans-serif" }}>
+            Trade tokenized stocks on the blockchain
+          </Typography>
+        </Box>
 
-        {/* Stock Prices Chart - Top Section */}
-        <Grid container spacing={3} sx={{ mb: 3 }}>
-          <Grid size={{ xs: 12 }}>
-            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-              <CardContent sx={{ p: 4 }}>
-                <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
-                  <Typography variant="h5" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                    {selectedStock.name} ({selectedStock.alphaSymbol})
-                  </Typography>
-                  <FormControl sx={{ minWidth: 200 }}>
-                    <InputLabel sx={{ color: "#666666" }}>Select Stock</InputLabel>
-                    <Select
-                      value={selectedStock.symbol}
-                      onChange={(e) => setSelectedStock(stocks.find(s => s.symbol === e.target.value) || stocks[0])}
-                      sx={{
-                        color: "#000000",
-                        "& .MuiOutlinedInput-notchedOutline": { borderColor: "#e0e0e0" },
-                        "&:hover .MuiOutlinedInput-notchedOutline": { borderColor: "#00C853" },
-                      }}
-                    >
-                      {stocks.map((stock) => (
-                        <MenuItem key={stock.symbol} value={stock.symbol}>
-                          {stock.name} ({stock.alphaSymbol})
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Box>
-
-                {error && (
-                  <Box sx={{ mb: 2, p: 2, bgcolor: "#fff3cd", borderRadius: 2, border: "1px solid #ffc107" }}>
-                    <Typography sx={{ color: "#856404", fontFamily: "'Inter', sans-serif", fontSize: "0.875rem" }}>
-                      ⚠️ {error}
-                    </Typography>
-                  </Box>
-                )}
-                
-                {loading ? (
-                  <Box sx={{ display: "flex", justifyContent: "center", py: 8 }}>
-                    <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>Loading stock data...</Typography>
-                  </Box>
-                ) : currentQuote ? (
-                  <>
-                    <Box sx={{ mb: 4 }}>
-                      <Box sx={{ display: "flex", alignItems: "baseline", gap: 2, mb: 1 }}>
-                        <Typography variant="h3" sx={{ fontWeight: 700, color: "#000000", fontFamily: "'Inter', sans-serif" }}>
-                          {selectedCurrency === "USD" && "$"}
-                          {selectedCurrency === "INR" && "₹"}
-                          {selectedCurrency === "CNY" && "¥"}
-                          {selectedCurrency === "EUR" && "€"}
-                          {convertPriceToSelectedCurrency(currentQuote.price).toFixed(2)}
-                        </Typography>
-                        <Chip
-                          label={`${currentQuote.change >= 0 ? "+" : ""}${(currentQuote.change * exchangeRates[selectedCurrency]).toFixed(2)} (${currentQuote.changePercent >= 0 ? "+" : ""}${currentQuote.changePercent.toFixed(2)}%)`}
-                          sx={{
-                            bgcolor: currentQuote.change >= 0 ? "#e8f5e9" : "#ffebee",
-                            color: currentQuote.change >= 0 ? "#2e7d32" : "#d32f2f",
-                            fontWeight: 600,
-                            fontFamily: "'Inter', sans-serif",
-                          }}
-                        />
-                      </Box>
-                    </Box>
-
-                    {chartData.length > 0 ? (
-                      <ResponsiveContainer width="100%" height={400}>
-                        <LineChart data={chartData}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                          <XAxis 
-                            dataKey="time" 
-                            stroke="#999999"
-                            tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                          />
-                          <YAxis
-                            stroke="#999999"
-                            tick={{ fill: "#666666", fontFamily: "'Inter', sans-serif" }}
-                            domain={[(dataMin: number) => dataMin * 0.999, (dataMax: number) => dataMax * 1.001]}
-                            tickFormatter={(value) => value.toFixed(2)}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: "#ffffff",
-                              border: "1px solid #e0e0e0",
-                              borderRadius: "8px",
-                              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-                              fontFamily: "'Inter', sans-serif",
-                            }}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="price"
-                            stroke="#00C853"
-                            strokeWidth={3}
-                            dot={false}
-                            activeDot={{ r: 6, fill: "#00C853" }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    ) : (
-                      <Box sx={{ py: 4, textAlign: "center" }}>
-                        <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                          No intraday data available. Market may be closed.
-                        </Typography>
-                      </Box>
-                    )}
-                  </>
-                ) : (
-                  <Box sx={{ py: 8, textAlign: "center" }}>
-                    <Typography sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                      Unable to load stock data. Please try again later.
-                    </Typography>
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-
-        {/* Portfolio View - Below Chart */}
-        {connected && (
-          <Grid container spacing={3} sx={{ mb: 3 }}>
-            <Grid size={{ xs: 12 }}>
-              <PortfolioView
-                positions={portfolioPositions}
-                totalValue={portfolioSummary.totalValue}
-                totalCostBasis={portfolioSummary.totalCostBasis}
-                totalUnrealizedPnl={portfolioSummary.totalUnrealizedPnl}
-                totalPnlPercent={portfolioSummary.totalPnlPercent}
-                loading={loadingPortfolio}
-                currency={selectedCurrency}
-                onStockClick={handleStockClick}
-              />
-            </Grid>
-          </Grid>
+        {/* Connect Wallet Prompt */}
+        {!connected && (
+          <Box
+            sx={{
+              mb: 4,
+              p: 3,
+              borderRadius: 2,
+              background: "linear-gradient(135deg, #00C853 0%, #00E676 100%)",
+              display: "flex",
+              alignItems: "center",
+              gap: 2,
+            }}
+          >
+            <Wallet size={32} color="#fff" />
+            <Box>
+              <Typography
+                variant="subtitle1"
+                sx={{ color: "#fff", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}
+              >
+                Connect Your Wallet
+              </Typography>
+              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.85)", fontFamily: "'Inter', sans-serif" }}>
+                Start trading tokenized stocks on Aptos
+              </Typography>
+            </Box>
+          </Box>
         )}
 
-        {/* Trade Stock Coins Section */}
-        <Grid container spacing={3}>
-          <Grid size={{ xs: 12 }}>
-            <Card sx={{ bgcolor: "#ffffff", borderRadius: 2, boxShadow: "0 2px 8px rgba(0,0,0,0.1)", border: "1px solid #e0e0e0" }}>
-              <CardContent sx={{ p: 3 }}>
-                <Typography variant="h6" sx={{ mb: 3, fontWeight: 600, color: "#000000", fontFamily: "'Poppins', sans-serif" }}>
-                  Trade Stock Coins
-                </Typography>
+        {/* Gainers and Losers Section */}
+        <Grid container spacing={3} sx={{ mb: 4 }}>
+          {/* Top Gainers */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ mb: 2, display: "flex", alignItems: "center" }}>
+              <TrendingUp size={24} color="#2e7d32" style={{ marginRight: 8 }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
+                Top Gainers
+              </Typography>
+              <Chip label="Coming Soon" size="small" sx={{ ml: 1, bgcolor: "#e8f5e9", color: "#2e7d32" }} />
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              {dummyGainers.map((item) => (
+                <MiniStockCard key={item.symbol} item={item} isDummy />
+              ))}
+            </Box>
+          </Grid>
 
-                {/* Current Holdings */}
-                <Box sx={{ mb: 3, p: 2, bgcolor: "#f0fdf4", borderRadius: 2, border: "1px solid #00C853" }}>
-                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
-                    Your Holdings
-                  </Typography>
-                  {loadingStockBalance ? (
-                    <CircularProgress size={20} sx={{ color: "#00C853" }} />
-                  ) : (
-                    <>
-                      <Typography variant="h5" sx={{ color: "#00C853", fontWeight: 700, mb: 1, fontFamily: "'Poppins', sans-serif" }}>
-                        {stockBalance.toFixed(6)} {selectedStock.symbol}
-                      </Typography>
-                      <Typography variant="body2" sx={{ color: "#666666", fontFamily: "'Inter', sans-serif" }}>
-                        Total Value: {getCurrencySymbol(selectedCurrency)}{(stockBalance * currentStockPriceInSelectedCurrency).toFixed(2)}
-                      </Typography>
-                    </>
-                  )}
-                </Box>
-
-                {/* Current Price */}
-                <Box sx={{ mb: 2, p: 2, bgcolor: "#f5f5f5", borderRadius: 2 }}>
-                  <Typography variant="body2" sx={{ color: "#666666", mb: 1, fontFamily: "'Inter', sans-serif" }}>
-                    Current Price
-                  </Typography>
-                  <Typography variant="h5" sx={{ color: "#000000", fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                    ₹{(currentStockPrice * exchangeRates.INR).toFixed(2)}
-                  </Typography>
-                </Box>
-
-                {/* Buy and Sell Buttons */}
-                <Box sx={{ display: "flex", gap: 2 }}>
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => setBuyStockModalOpen(true)}
-                    disabled={!connected}
-                    sx={{
-                      bgcolor: "#00C853",
-                      color: "#ffffff",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontFamily: "'Inter', sans-serif",
-                      py: 1.5,
-                      "&:hover": { bgcolor: "#00A043" },
-                      "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
-                    }}
-                  >
-                    {connected ? `Buy ${selectedStock.symbol}` : "Connect Wallet"}
-                  </Button>
-                  <Button
-                    variant="contained"
-                    fullWidth
-                    onClick={() => setSellStockModalOpen(true)}
-                    disabled={!connected || stockBalance <= 0}
-                    sx={{
-                      bgcolor: "#d32f2f",
-                      color: "#ffffff",
-                      textTransform: "none",
-                      fontWeight: 600,
-                      fontFamily: "'Inter', sans-serif",
-                      py: 1.5,
-                      "&:hover": { bgcolor: "#b71c1c" },
-                      "&:disabled": { bgcolor: "#e0e0e0", color: "#bdbdbd" },
-                    }}
-                  >
-                    {connected ? `Sell ${selectedStock.symbol}` : "Connect Wallet"}
-                  </Button>
-                </Box>
-              </CardContent>
-            </Card>
+          {/* Top Losers */}
+          <Grid size={{ xs: 12, md: 6 }}>
+            <Box sx={{ mb: 2, display: "flex", alignItems: "center" }}>
+              <TrendingDown size={24} color="#d32f2f" style={{ marginRight: 8 }} />
+              <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
+                Top Losers
+              </Typography>
+              <Chip label="Coming Soon" size="small" sx={{ ml: 1, bgcolor: "#ffebee", color: "#d32f2f" }} />
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              {dummyLosers.map((item) => (
+                <MiniStockCard key={item.symbol} item={item} isDummy />
+              ))}
+            </Box>
           </Grid>
         </Grid>
-      </Container>
 
-      <BalanceModal
-        open={balanceModalOpen}
-        onClose={() => setBalanceModalOpen(false)}
-        currency={balanceCurrency}
-      />
-      <BuyStockModal
-        open={buyStockModalOpen}
-        onClose={() => setBuyStockModalOpen(false)}
-        onBuySuccess={() => {
-          handleBalanceUpdate();
-          handlePortfolioUpdate();
-          if (account?.address) {
-            backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
-          }
-        }}
-      />
-      <SellStockModal
-        open={sellStockModalOpen}
-        onClose={() => setSellStockModalOpen(false)}
-        currentStock={selectedStock.symbol}
-        currentBalance={stockBalance}
-        onSellSuccess={() => {
-          handleBalanceUpdate();
-          handlePortfolioUpdate();
-          if (account?.address) {
-            backendApi.getStockBalance(selectedStock.symbol, account.address.toString()).then(setStockBalance);
-          }
-        }}
-      />
+        {/* Portfolio Section - Only when connected */}
+        {connected && portfolioPositions.length > 0 && (
+          <Box sx={{ mb: 4 }}>
+            <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
+                Your Portfolio
+              </Typography>
+              <Chip
+                label={`${portfolioPositions.length} holdings`}
+                size="small"
+                sx={{ ml: 1.5, bgcolor: "#e3f2fd", color: "#1976d2", fontWeight: 500 }}
+              />
+            </Box>
+            <Grid container spacing={2}>
+              {portfolioPositions.map((pos) => {
+                const isPositive = pos.unrealizedPnl >= 0;
+                const stockData = stocks.find((s) => s.symbol === pos.stockSymbol);
+                return (
+                  <Grid size={{ xs: 12, sm: 6, md: 4 }} key={pos.stockSymbol}>
+                    <Card
+                      onClick={() => handleStockClick(pos.stockSymbol)}
+                      sx={{
+                        cursor: "pointer",
+                        borderRadius: 2,
+                        boxShadow: "0 1px 6px rgba(0,0,0,0.06)",
+                        border: "1px solid #f0f0f0",
+                        transition: "all 0.2s ease",
+                        "&:hover": {
+                          borderColor: "#00C853",
+                          boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
+                        },
+                      }}
+                    >
+                      <CardContent sx={{ p: 2, "&:last-child": { pb: 2 } }}>
+                        <Box sx={{ display: "flex", alignItems: "center", mb: 1.5 }}>
+                          <Avatar
+                            src={stockData?.logo}
+                            sx={{ width: 36, height: 36, mr: 1.5, bgcolor: "#f5f5f5" }}
+                          >
+                            {pos.stockSymbol[0]}
+                          </Avatar>
+                          <Box sx={{ flex: 1, minWidth: 0 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                              {pos.stockSymbol}
+                            </Typography>
+                            <Typography variant="caption" sx={{ color: "#999" }}>
+                              {pos.currentQuantity.toFixed(4)} shares
+                            </Typography>
+                          </Box>
+                          <Chip
+                            label={`${isPositive ? "+" : ""}${pos.unrealizedPnlPercent?.toFixed(2) || "0.00"}%`}
+                            size="small"
+                            sx={{
+                              bgcolor: isPositive ? "#e8f5e9" : "#ffebee",
+                              color: isPositive ? "#2e7d32" : "#d32f2f",
+                              fontWeight: 600,
+                              fontSize: "0.7rem",
+                            }}
+                          />
+                        </Box>
+                        <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                          <Box>
+                            <Typography variant="caption" sx={{ color: "#999", display: "block" }}>
+                              Invested
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
+                              ₹{pos.totalCostBasis.toFixed(2)}
+                            </Typography>
+                          </Box>
+                          <Box sx={{ textAlign: "right" }}>
+                            <Typography variant="caption" sx={{ color: "#999", display: "block" }}>
+                              Current
+                            </Typography>
+                            <Typography variant="body2" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif", color: isPositive ? "#2e7d32" : "#d32f2f" }}>
+                              ₹{pos.currentValue.toFixed(2)}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </CardContent>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Box>
+        )}
+
+        {/* All Tokens Section */}
+        <Box sx={{ mb: 3 }}>
+          <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
+              All Tokens
+            </Typography>
+            <TextField
+              size="small"
+              placeholder="Search tokens..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search size={18} color="#999" />
+                  </InputAdornment>
+                ),
+              }}
+              sx={{
+                width: 250,
+                "& .MuiOutlinedInput-root": {
+                  borderRadius: 2,
+                  bgcolor: "#fff",
+                  "& fieldset": { borderColor: "#e0e0e0" },
+                  "&:hover fieldset": { borderColor: "#00C853" },
+                  "&.Mui-focused fieldset": { borderColor: "#00C853" },
+                },
+              }}
+            />
+          </Box>
+
+          {loading ? (
+            <Box sx={{ textAlign: "center", py: 4 }}>
+              <Typography sx={{ color: "#666" }}>Loading tokens...</Typography>
+            </Box>
+          ) : (
+            <Grid container spacing={2}>
+              {filteredStocks.map((stock) => (
+                <Grid size={{ xs: 12, sm: 6, md: 4, lg: 2.4 }} key={stock.symbol}>
+                  <StockCard stock={stock} quote={stockQuotes[stock.symbol]} />
+                </Grid>
+              ))}
+            </Grid>
+          )}
+        </Box>
+      </Container>
     </Box>
   );
 }

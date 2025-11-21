@@ -1,18 +1,4 @@
-import { aptos } from "../aptosClient.js";
-
-const STOCK_MODULES: Record<string, string> = {
-  GOOG: "GOOGCoin",
-  AAPL: "AAPLCoin",
-  TSLA: "TSLACoin",
-  NVDA: "NVDACoin",
-  HOOD: "HOODCoin",
-};
-
-const CURRENCY_MODULES: Record<string, string> = {
-  INR: "INRCoin",
-  EUR: "EURCoin",
-  CNY: "CNYCoin",
-};
+import { query } from "../db/database.js";
 
 export async function getTokenBalance(
   tokenType: "stock" | "currency",
@@ -20,35 +6,49 @@ export async function getTokenBalance(
   userAddress: string
 ): Promise<number> {
   try {
-    let moduleName: string | undefined;
+    console.log(`[GET ${tokenSymbol} BALANCE] Fetching balance from database for ${userAddress}`);
 
     if (tokenType === "stock") {
-      moduleName = STOCK_MODULES[tokenSymbol];
+      // Query portfolio_positions table for stock balance
+      const result = await query(
+        `SELECT current_quantity
+         FROM portfolio_positions pp
+         JOIN users u ON pp.user_id = u.id
+         WHERE u.wallet_address = $1 AND pp.stock_symbol = $2`,
+        [userAddress, tokenSymbol]
+      );
+
+      if (result.rows.length === 0) {
+        console.log(`[GET ${tokenSymbol} BALANCE] No position found, returning 0`);
+        return 0;
+      }
+
+      const balance = parseFloat(result.rows[0].current_quantity);
+      console.log(`[GET ${tokenSymbol} BALANCE] Balance from DB: ${balance}`);
+      return balance;
+
     } else if (tokenType === "currency") {
-      moduleName = CURRENCY_MODULES[tokenSymbol];
+      // Query currency_balances table for currency balance
+      const result = await query(
+        `SELECT balance
+         FROM currency_balances cb
+         JOIN users u ON cb.user_id = u.id
+         WHERE u.wallet_address = $1 AND cb.currency_symbol = $2`,
+        [userAddress, tokenSymbol]
+      );
+
+      if (result.rows.length === 0) {
+        console.log(`[GET ${tokenSymbol} BALANCE] No balance found, returning 0`);
+        return 0;
+      }
+
+      const balance = parseFloat(result.rows[0].balance);
+      console.log(`[GET ${tokenSymbol} BALANCE] Balance from DB: ${balance}`);
+      return balance;
+
+    } else {
+      throw new Error(`Unknown token type: ${tokenType}`);
     }
-
-    if (!moduleName) {
-      throw new Error(`Unknown ${tokenType}: ${tokenSymbol}`);
-    }
-
-    console.log(`[GET ${tokenSymbol} BALANCE] Fetching balance for ${userAddress}`);
-
-    // Call the balance_of view function
-    const result = await aptos.view({
-      payload: {
-        function: `${process.env.MY_ADDR}::${moduleName}::balance_of`,
-        functionArguments: [userAddress],
-      },
-    });
-
-    // The balance is returned in microunits (with 6 decimals)
-    const balanceInMicrounits = Number(result[0]);
-    const balance = balanceInMicrounits / 1_000_000;
-
-    console.log(`[GET ${tokenSymbol} BALANCE] Balance: ${balance} (${balanceInMicrounits} microunits)`);
-
-    return balance;
   } catch (error: any) {
     console.error(`[GET ${tokenSymbol} BALANCE] Error:`, error.message);
     throw new Error(`Failed to get ${tokenSymbol} balance: ${error.message}`);
