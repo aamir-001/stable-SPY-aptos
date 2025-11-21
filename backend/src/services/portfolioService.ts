@@ -18,6 +18,7 @@ export async function logBuyTransaction(params: {
   totalValue: number;
   baseCurrency: string;
   txHash: string;
+  feeAmount?: number;
 }) {
   try {
     // 1. Upsert user and get user_id
@@ -27,20 +28,21 @@ export async function logBuyTransaction(params: {
     await query(
       `INSERT INTO transactions (
         user_id, transaction_type, stock_symbol,
-        quantity, price_per_unit, total_value,
-        tx_hash, status
-      ) VALUES ($1, 'BUY', $2, $3, $4, $5, $6, 'SUCCESS')`,
+        quantity, total_value, fee_amount,
+        base_currency, tx_hash, status
+      ) VALUES ($1, 'BUY', $2, $3, $4, $5, $6, $7, 'SUCCESS')`,
       [
         userId,
         params.stockSymbol,
         params.quantity,
-        params.pricePerShare,
         params.totalValue,
+        params.feeAmount || 0,
+        params.baseCurrency,
         params.txHash,
       ]
     );
 
-    console.log(`✅ [DB] Logged BUY transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (trigger will update portfolio)`);
+    console.log(`✅ [DB] Logged BUY transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (fee: ${params.feeAmount || 0})`);
   } catch (error) {
     console.error('❌ [DB] Error logging buy transaction:', error);
     throw error;
@@ -56,6 +58,7 @@ export async function logSellTransaction(params: {
   totalValue: number;
   baseCurrency: string;
   txHash: string;
+  feeAmount?: number;
 }) {
   try {
     // 1. Upsert user and get user_id
@@ -65,20 +68,21 @@ export async function logSellTransaction(params: {
     await query(
       `INSERT INTO transactions (
         user_id, transaction_type, stock_symbol,
-        quantity, price_per_unit, total_value,
-        tx_hash, status
-      ) VALUES ($1, 'SELL', $2, $3, $4, $5, $6, 'SUCCESS')`,
+        quantity, total_value, fee_amount,
+        base_currency, tx_hash, status
+      ) VALUES ($1, 'SELL', $2, $3, $4, $5, $6, $7, 'SUCCESS')`,
       [
         userId,
         params.stockSymbol,
         params.quantity,
-        params.pricePerShare,
         params.totalValue,
+        params.feeAmount || 0,
+        params.baseCurrency,
         params.txHash,
       ]
     );
 
-    console.log(`✅ [DB] Logged SELL transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (trigger will calculate P&L)`);
+    console.log(`✅ [DB] Logged SELL transaction: ${params.quantity} ${params.stockSymbol} @ ${params.pricePerShare} (fee: ${params.feeAmount || 0})`);
   } catch (error) {
     console.error('❌ [DB] Error logging sell transaction:', error);
     throw error;
@@ -101,13 +105,14 @@ export async function logMintTransaction(params: {
     await query(
       `INSERT INTO transactions (
         user_id, transaction_type, currency_symbol,
-        quantity, total_value, tx_hash, status
-      ) VALUES ($1, 'MINT', $2, $3, $4, $5, 'SUCCESS')`,
+        quantity, total_value, base_currency, tx_hash, status
+      ) VALUES ($1, 'MINT', $2, $3, $4, $5, $6, 'SUCCESS')`,
       [
         userId,
         params.currencySymbol,
         params.amount,
         params.amount,
+        params.baseCurrency,
         params.txHash,
       ]
     );
@@ -129,7 +134,8 @@ export async function getPortfolioOverview(walletAddress: string) {
       pp.average_cost_per_share,
       pp.realized_profit_loss,
       pp.last_updated,
-      u.base_currency
+      u.base_currency,
+      u.id as user_id
      FROM portfolio_positions pp
      JOIN users u ON pp.user_id = u.id
      WHERE u.wallet_address = $1 AND pp.current_quantity > 0
@@ -137,15 +143,34 @@ export async function getPortfolioOverview(walletAddress: string) {
     [walletAddress]
   );
 
-  return result.rows.map(row => ({
-    stockSymbol: row.stock_symbol,
-    currentQuantity: parseFloat(row.current_quantity),
-    totalCostBasis: parseFloat(row.total_cost_basis),
-    averageCostPerShare: parseFloat(row.average_cost_per_share),
-    realizedProfitLoss: parseFloat(row.realized_profit_loss),
-    baseCurrency: row.base_currency,
-    lastUpdated: row.last_updated,
+  // For each position, calculate total amount spent on stocks (excluding fees)
+  const positionsWithInvestment = await Promise.all(result.rows.map(async row => {
+    // Calculate stock investment by subtracting fees from total cost basis
+    // This avoids relying on potentially corrupt transaction.total_value data
+    const feesResult = await query(
+      `SELECT COALESCE(SUM(fee_amount), 0) as total_fees
+       FROM transactions
+       WHERE user_id = $1 AND stock_symbol = $2 AND transaction_type = 'BUY' AND status = 'SUCCESS'`,
+      [row.user_id, row.stock_symbol]
+    );
+
+    const totalFees = parseFloat(feesResult.rows[0].total_fees);
+    const totalCostBasis = parseFloat(row.total_cost_basis);
+    const stockInvestment = totalCostBasis - totalFees;
+
+    return {
+      stockSymbol: row.stock_symbol,
+      currentQuantity: parseFloat(row.current_quantity),
+      totalCostBasis: parseFloat(row.total_cost_basis), // Includes fees - used for P&L calc
+      stockInvestment: stockInvestment, // Excludes fees - used for display
+      averageCostPerShare: parseFloat(row.average_cost_per_share),
+      realizedProfitLoss: parseFloat(row.realized_profit_loss),
+      baseCurrency: row.base_currency,
+      lastUpdated: row.last_updated,
+    };
   }));
+
+  return positionsWithInvestment;
 }
 
 // Get detailed position for a specific stock
@@ -176,8 +201,8 @@ export async function getStockPosition(walletAddress: string, stockSymbol: strin
     `SELECT
       t.transaction_type,
       t.quantity,
-      t.price_per_unit,
       t.total_value,
+      t.fee_amount,
       t.realized_pnl,
       t.tx_hash,
       t.created_at
@@ -199,8 +224,9 @@ export async function getStockPosition(walletAddress: string, stockSymbol: strin
     transactions: transactionsResult.rows.map(tx => ({
       type: tx.transaction_type,
       quantity: parseFloat(tx.quantity),
-      pricePerShare: tx.price_per_unit ? parseFloat(tx.price_per_unit) : null,
+      pricePerShare: tx.quantity > 0 ? parseFloat(tx.total_value) / parseFloat(tx.quantity) : null,
       totalValue: parseFloat(tx.total_value),
+      feeAmount: parseFloat(tx.fee_amount || 0),
       realizedPnl: tx.realized_pnl ? parseFloat(tx.realized_pnl) : null,
       txHash: tx.tx_hash,
       timestamp: tx.created_at,
@@ -216,8 +242,8 @@ export async function getUserTransactions(walletAddress: string, limit: number =
       t.stock_symbol,
       t.currency_symbol,
       t.quantity,
-      t.price_per_unit,
       t.total_value,
+      t.fee_amount,
       t.realized_pnl,
       t.tx_hash,
       t.status,
@@ -236,8 +262,9 @@ export async function getUserTransactions(walletAddress: string, limit: number =
     stockSymbol: tx.stock_symbol,
     currencySymbol: tx.currency_symbol,
     quantity: parseFloat(tx.quantity),
-    pricePerShare: tx.price_per_unit ? parseFloat(tx.price_per_unit) : null,
+    pricePerShare: tx.quantity > 0 ? parseFloat(tx.total_value) / parseFloat(tx.quantity) : null,
     totalValue: parseFloat(tx.total_value),
+    feeAmount: parseFloat(tx.fee_amount || 0),
     realizedPnl: tx.realized_pnl ? parseFloat(tx.realized_pnl) : null,
     baseCurrency: tx.base_currency,
     txHash: tx.tx_hash,
