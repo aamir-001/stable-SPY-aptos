@@ -48,7 +48,8 @@
       "Bash(aptos move run:*)",
       "Bash(aptos move view:*)",
       "Bash(del \"d:\\Aptos\\stable-SPY-aptos\\backend\\check_admin_balance.ts\" 2)",
-      "Bash(del /f check_admin_balance.ts)"
+      "Bash(del /f check_admin_balance.ts)",
+      "Bash(git checkout:*)"
     ],
     "deny": [],
     "ask": []

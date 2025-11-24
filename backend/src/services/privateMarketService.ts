@@ -72,6 +72,27 @@ export async function getPrivateStockBalance(userAddress: string, symbol: string
   }
 }
 
+// Get USDC balance
+async function getUSDCBalance(userAddress: string): Promise<number> {
+  try {
+    // Use the balance function directly with metadata object
+    const balanceResult = await aptos.view({
+      payload: {
+        function: `0x1::primary_fungible_store::balance`,
+        typeArguments: [`0x1::fungible_asset::Metadata`],
+        functionArguments: [userAddress, USDC_ADDRESS],
+      },
+    });
+
+    const balance = Number(balanceResult[0]) / 1_000_000; // USDC has 6 decimals
+    console.log(`[USDC BALANCE CHECK] User: ${userAddress}, Balance: $${balance.toFixed(4)} USDC`);
+    return balance;
+  } catch (error) {
+    console.error('Error getting USDC balance:', error);
+    return 0;
+  }
+}
+
 export async function buyPrivateStockService(
   userAddress: string,
   stock: string,
@@ -110,32 +131,56 @@ export async function buyPrivateStockService(
   const actualTokenValue = new Decimal(tokensToMint).times(priceScaled).toNumber();
   const feeAmountScaled = new Decimal(actualTokenValue).times(FEE_PERCENTAGE).floor().toNumber();
   const totalUsdcNeeded = actualTokenValue + feeAmountScaled;
+  const totalUsdcNeededInUsdc = new Decimal(totalUsdcNeeded).dividedBy(1_000_000).toNumber();
+
+  // Check USDC balance
+  const usdcBalance = await getUSDCBalance(userAddress);
+  if (usdcBalance < totalUsdcNeededInUsdc) {
+    throw new Error(
+      `Insufficient USDC balance. You have $${usdcBalance.toFixed(4)} USDC but need $${totalUsdcNeededInUsdc.toFixed(4)} USDC (including 0.1% fee).`
+    );
+  }
 
   console.log("[PRIVATE BUY] Stock:", upperStock);
   console.log("[PRIVATE BUY] Price per token: $", pricePerToken);
   console.log("[PRIVATE BUY] USDC provided: $", usdcAmount);
-  console.log("[PRIVATE BUY] Tokens to mint:", tokensToMint);
+  console.log("[PRIVATE BUY] User USDC balance: $", usdcBalance.toFixed(4));
+  console.log("[PRIVATE BUY] Tokens to transfer:", tokensToMint);
   console.log("[PRIVATE BUY] Token value: $", new Decimal(actualTokenValue).dividedBy(1_000_000).toFixed(4));
   console.log("[PRIVATE BUY] Fee (0.1%): $", new Decimal(feeAmountScaled).dividedBy(1_000_000).toFixed(4));
-  console.log("[PRIVATE BUY] Total USDC needed: $", new Decimal(totalUsdcNeeded).dividedBy(1_000_000).toFixed(4));
+  console.log("[PRIVATE BUY] Total USDC needed: $", totalUsdcNeededInUsdc.toFixed(4));
 
-  // Mint tokens to user (tokens are in microunits)
-  const tokensToMintScaled = tokensToMint * 1_000_000;
+  // Check if admin has enough stock tokens
+  const adminBalance = await getPrivateStockBalance(signer.accountAddress.toString(), upperStock);
+  if (adminBalance < tokensToMint) {
+    throw new Error(
+      `Insufficient admin stock balance. Admin has ${adminBalance} ${upperStock} but needs ${tokensToMint}.`
+    );
+  }
 
-  const mintTxn = await aptos.transaction.build.simple({
+  // Transfer stock tokens from admin to user (using transfer_coins function)
+  const tokensToTransferScaled = tokensToMint * 1_000_000;
+
+  const transferStockTxn = await aptos.transaction.build.simple({
     sender: signer.accountAddress,
     data: {
-      function: `${MY_ADDR}::${moduleName}::mint_coins`,
-      functionArguments: [userAddress, tokensToMintScaled],
+      function: `${MY_ADDR}::${moduleName}::transfer_coins`,
+      functionArguments: [
+        signer.accountAddress.toString(), // from (admin)
+        userAddress,                       // to (user)
+        tokensToTransferScaled            // amount
+      ],
     },
   });
 
-  const mintCommitted = await aptos.signAndSubmitTransaction({
+  const transferStockCommitted = await aptos.signAndSubmitTransaction({
     signer,
-    transaction: mintTxn,
+    transaction: transferStockTxn,
   });
 
-  await aptos.waitForTransaction({ transactionHash: mintCommitted.hash });
+  console.log("[PRIVATE BUY] Stock transfer tx:", transferStockCommitted.hash);
+  await aptos.waitForTransaction({ transactionHash: transferStockCommitted.hash });
+  console.log("[PRIVATE BUY] Stock tokens transferred successfully");
 
   // Log to database
   const pricePerShare = pricePerToken;
@@ -150,7 +195,7 @@ export async function buyPrivateStockService(
       pricePerShare,
       totalValue,
       feeAmount,
-      tokenTxHash: mintCommitted.hash,
+      tokenTxHash: transferStockCommitted.hash,
     });
   } catch (error) {
     console.error('Failed to log private buy transaction to database:', error);
@@ -158,7 +203,7 @@ export async function buyPrivateStockService(
 
   return {
     success: true,
-    txHash: mintCommitted.hash,
+    txHash: transferStockCommitted.hash,
     tokenAmount: tokensToMint,
     pricePerToken: pricePerToken,
     totalSpent: totalValue,
