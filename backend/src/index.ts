@@ -5,6 +5,7 @@ import exchangeRoutes from "./routes/exchangeRoutes.js";
 import currencyRoutes from "./routes/currencyRoutes.js";
 import tokenRoutes from "./routes/tokenRoutes.js";
 import portfolioRoutes from "./routes/portfolioRoutes.js";
+import privateMarketRoutes from "./routes/privateMarketRoutes.js";
 import pool from "./db/database.js";
 
 dotenv.config();
@@ -21,16 +22,17 @@ app.use(cors({
 app.use(express.json());
 
 // Health check endpoint
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.json({
     status: "OK",
     message: "Stock Exchange API is running",
     version: "1.0.0",
     endpoints: {
-      exchange: "/exchange - Buy/Sell stocks",
+      exchange: "/exchange - Buy/Sell stocks (INR)",
       currency: "/currency - Mint/Burn/Balance currencies (INR, EUR, CNY)",
       token: "/token - Get token balances (stocks and currencies)",
-      portfolio: "/portfolio - Portfolio P&L tracking and transaction history"
+      portfolio: "/portfolio - Portfolio P&L tracking and transaction history",
+      private: "/private - Private market stocks (USDC) - Stripe, OpenAI, Databricks, SpaceX"
     }
   });
 });
@@ -40,6 +42,7 @@ app.use("/exchange", exchangeRoutes);
 app.use("/currency", currencyRoutes);
 app.use("/token", tokenRoutes);
 app.use("/portfolio", portfolioRoutes);
+app.use("/private", privateMarketRoutes);
 
 const PORT = process.env.PORT || 3001;
 
@@ -49,6 +52,7 @@ const server = app.listen(PORT, () => {
   console.log(`💰 Currency API: http://localhost:${PORT}/currency`);
   console.log(`🪙 Token API: http://localhost:${PORT}/token`);
   console.log(`📈 Portfolio API: http://localhost:${PORT}/portfolio`);
+  console.log(`🏢 Private Market API: http://localhost:${PORT}/private`);
   console.log(`✅ Server is ready to accept connections`);
 });
 

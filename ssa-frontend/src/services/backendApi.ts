@@ -137,6 +137,47 @@ export interface UserInfo {
   updatedAt?: string;
 }
 
+// Private Market types
+export interface PrivateStock {
+  symbol: string;
+  price: number;
+  metadata: string;
+  module: string;
+}
+
+export interface BuyPrivateStockRequest {
+  userAddress: string;
+  stock: string;
+  amount: number; // USDC amount
+}
+
+export interface BuyPrivateStockResponse {
+  success: boolean;
+  txHash: string;
+  tokenAmount: number;
+  pricePerToken: number;
+  totalSpent: number;
+  feeAmount: number;
+  totalDeducted: number;
+  change: number;
+}
+
+export interface SellPrivateStockRequest {
+  userAddress: string;
+  stock: string;
+  amount: number; // Token amount
+}
+
+export interface SellPrivateStockResponse {
+  success: boolean;
+  txHash: string;
+  tokensSold: number;
+  pricePerToken: number;
+  grossAmount: number;
+  feeAmount: number;
+  netReceived: number;
+}
+
 export const backendApi = {
   // Buy stock using backend endpoint
   async buyStock(request: BuyStockRequest): Promise<BuyStockResponse> {
@@ -256,6 +297,85 @@ export const backendApi = {
     } catch (error: any) {
       console.error('Get user info error:', error);
       throw new Error(error.response?.data?.error || 'Failed to get user info');
+    }
+  },
+
+  // ===== Private Market APIs =====
+
+  // Get all available private stocks
+  async getPrivateStocks(): Promise<{ success: boolean; stocks: PrivateStock[] }> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/private/stocks`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get private stocks error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get private stocks');
+    }
+  },
+
+  // Get private stock price
+  async getPrivateStockPrice(symbol: string): Promise<{ success: boolean; symbol: string; price: number; currency: string }> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/private/price/${symbol}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get private stock price error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to get private stock price');
+    }
+  },
+
+  // Get private stock balance
+  async getPrivateStockBalance(address: string, symbol: string): Promise<number> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/private/balance/${address}/${symbol}`);
+      return response.data.balance;
+    } catch (error: any) {
+      console.error('Get private stock balance error:', error);
+      return 0;
+    }
+  },
+
+  // Buy private stock with USDC
+  async buyPrivateStock(request: BuyPrivateStockRequest): Promise<BuyPrivateStockResponse> {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/private/buy`, request);
+      return response.data;
+    } catch (error: any) {
+      console.error('Buy private stock error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to buy private stock');
+    }
+  },
+
+  // Sell private stock for USDC
+  async sellPrivateStock(request: SellPrivateStockRequest): Promise<SellPrivateStockResponse> {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/private/sell`, request);
+      return response.data;
+    } catch (error: any) {
+      console.error('Sell private stock error:', error);
+      throw new Error(error.response?.data?.error || 'Failed to sell private stock');
+    }
+  },
+
+  // Get private market portfolio
+  async getPrivatePortfolio(address: string): Promise<any> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/private/portfolio/${address}`);
+      return response.data;
+    } catch (error: any) {
+      console.error('Get private portfolio error:', error);
+      return { success: true, portfolio: [] };
+    }
+  },
+
+  // Get private market transactions
+  async getPrivateTransactions(address: string): Promise<any[]> {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/private/transactions/${address}`);
+      return response.data.transactions || [];
+    } catch (error: any) {
+      console.error('Get private transactions error:', error);
+      return [];
     }
   }
 };
