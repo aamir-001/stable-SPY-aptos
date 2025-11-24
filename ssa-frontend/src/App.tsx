@@ -23,6 +23,14 @@ const stocks = [
   { name: "Robinhood", symbol: "HOOD", logo: "https://logo.clearbit.com/robinhood.com" },
 ];
 
+// Private market stocks (USDC-based)
+const privateStocks = [
+  { name: "Stripe", symbol: "STRIPE", logo: "https://logo.clearbit.com/stripe.com", price: 0.45 },
+  { name: "OpenAI", symbol: "OPENAI", logo: "https://logo.clearbit.com/openai.com", price: 0.50 },
+  { name: "Databricks", symbol: "DATABRICKS", logo: "https://logo.clearbit.com/databricks.com", price: 0.35 },
+  { name: "SpaceX", symbol: "SPACEX", logo: "https://logo.clearbit.com/spacex.com", price: 0.40 },
+];
+
 // Dummy data for gainers and losers
 const dummyGainers = [
   { name: "Amazon", symbol: "AMZN", price: 18500.50, changePercent: 4.25, logo: "https://logo.clearbit.com/amazon.com" },
@@ -469,11 +477,81 @@ function HomePage() {
           </Box>
         )}
 
+        {/* Private Market Section */}
+        <Box sx={{ mb: 4 }}>
+          <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+            <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
+              Private Market
+            </Typography>
+            <Chip
+              label="USDC"
+              size="small"
+              sx={{ ml: 1.5, bgcolor: "#e3f2fd", color: "#1565c0", fontWeight: 600 }}
+            />
+          </Box>
+          <Grid container spacing={2}>
+            {privateStocks.map((stock) => (
+              <Grid size={{ xs: 12, sm: 6, md: 3 }} key={stock.symbol}>
+                <Card
+                  onClick={() => handleStockClick(stock.symbol)}
+                  sx={{
+                    cursor: "pointer",
+                    borderRadius: 3,
+                    boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+                    border: "1px solid #e3f2fd",
+                    background: "linear-gradient(135deg, #f8fbff 0%, #ffffff 100%)",
+                    transition: "all 0.2s ease",
+                    "&:hover": {
+                      transform: "translateY(-4px)",
+                      boxShadow: "0 8px 24px rgba(21, 101, 192, 0.15)",
+                      borderColor: "#1565c0",
+                    },
+                  }}
+                >
+                  <CardContent sx={{ p: 2.5 }}>
+                    <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                      <Avatar
+                        src={stock.logo}
+                        sx={{ width: 44, height: 44, mr: 1.5, bgcolor: "#f5f5f5" }}
+                      >
+                        {stock.symbol[0]}
+                      </Avatar>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif", lineHeight: 1.2 }}>
+                          {stock.name}
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: "#666", fontFamily: "'Inter', sans-serif" }}>
+                          {stock.symbol}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                      <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Inter', sans-serif", color: "#1565c0" }}>
+                        ${stock.price.toFixed(2)}
+                      </Typography>
+                      <Chip
+                        label="USDC"
+                        size="small"
+                        sx={{
+                          bgcolor: "#e3f2fd",
+                          color: "#1565c0",
+                          fontWeight: 600,
+                          fontSize: "0.7rem",
+                        }}
+                      />
+                    </Box>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Box>
+
         {/* All Tokens Section */}
         <Box sx={{ mb: 3 }}>
           <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 3 }}>
             <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: "'Poppins', sans-serif" }}>
-              All Tokens
+              Public Market
             </Typography>
             <TextField
               size="small"

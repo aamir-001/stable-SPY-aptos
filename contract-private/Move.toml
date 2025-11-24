@@ -1,0 +1,21 @@
+[package]
+name = "private-market-tokens"
+version = "1.0.0"
+authors = []
+
+[addresses]
+my_addr = "0xebb91a4b81d7df2f2994095f2c6242096bbd4c18d78df312de70ddb8f25779a9"
+
+[dev-addresses]
+
+[dependencies.AptosFramework]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-framework"
+
+[dependencies.AptosStdlib]
+git = "https://github.com/aptos-labs/aptos-core.git"
+rev = "mainnet"
+subdir = "aptos-move/framework/aptos-stdlib"
+
+[dev-dependencies]

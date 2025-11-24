@@ -39,7 +39,16 @@
       "Bash(python -m json.tool:*)",
       "Bash(d:Aptosstable-SPY-aptosbackendsrcindex.ts)",
       "Bash(del add_fee_amount_column.sql add_fee_column.sql add_realized_pnl_column.sql clear_transactions.sql diagnose_current_state.sql fix_fee_calculations.sql fix_stock_investment.sql migration_add_realized_pnl.sql test_stockinvestment_fix.sql update_trigger.sql update_trigger_for_realized_pnl.sql)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(mkdir -p \"d:\\Aptos\\stable-SPY-aptos\\contract\\sources\\Private-Stock-tokens\" 2)",
+      "Bash(aptos move compile:*)",
+      "Bash(aptos move publish:*)",
+      "Bash(aptos account list:*)",
+      "Bash(xcopy:*)",
+      "Bash(aptos move run:*)",
+      "Bash(aptos move view:*)",
+      "Bash(del \"d:\\Aptos\\stable-SPY-aptos\\backend\\check_admin_balance.ts\" 2)",
+      "Bash(del /f check_admin_balance.ts)"
     ],
     "deny": [],
     "ask": []

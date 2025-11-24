@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Box, Container, Typography, Card, CardContent, Button, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, Dialog, DialogContent, TextField, Alert, Avatar } from '@mui/material';
 import { ArrowLeft, TrendingUp, TrendingDown, ShoppingCart, DollarSign } from 'lucide-react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
+import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
 import { useWallet } from "@aptos-labs/wallet-adapter-react";
 import { backendApi } from '../services/backendApi';
 import type { StockPositionDetail } from '../services/backendApi';
@@ -25,7 +25,23 @@ const stockInfo: Record<string, { name: string; logo: string }> = {
   TSLA: { name: 'Tesla', logo: 'https://logo.clearbit.com/tesla.com' },
   NVDA: { name: 'NVIDIA', logo: 'https://logo.clearbit.com/nvidia.com' },
   HOOD: { name: 'Robinhood', logo: 'https://logo.clearbit.com/robinhood.com' },
+  // Private market stocks
+  STRIPE: { name: 'Stripe', logo: 'https://logo.clearbit.com/stripe.com' },
+  OPENAI: { name: 'OpenAI', logo: 'https://logo.clearbit.com/openai.com' },
+  DATABRICKS: { name: 'Databricks', logo: 'https://logo.clearbit.com/databricks.com' },
+  SPACEX: { name: 'SpaceX', logo: 'https://logo.clearbit.com/spacex.com' },
 };
+
+// Private market stock prices (USDC)
+const privateStockPrices: Record<string, number> = {
+  STRIPE: 0.45,
+  OPENAI: 0.50,
+  DATABRICKS: 0.35,
+  SPACEX: 0.40,
+};
+
+// Check if stock is a private market stock
+const isPrivateStock = (symbol: string) => symbol in privateStockPrices;
 
 // Generate dummy price chart data
 const generateChartData = (currentPrice: number, days: number = 30) => {
@@ -85,12 +101,45 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
       return;
     }
 
+    const upperStock = stock.toUpperCase();
+
     try {
       setLoading(true);
       setError(null);
-      const data = await backendApi.getStockPosition(walletAddress, stock.toUpperCase());
-      setStockData(data);
-      setChartData(generateChartData(data.currentPrice));
+
+      if (isPrivateStock(upperStock)) {
+        // For private market stocks, create data from balance
+        const price = privateStockPrices[upperStock];
+        const balance = await backendApi.getPrivateStockBalance(walletAddress, upperStock);
+
+        const mockData: StockPositionDetail = {
+          success: true,
+          stockSymbol: upperStock,
+          currentPrice: price,
+          position: {
+            currentQuantity: balance,
+            currentValue: balance * price,
+            totalCostBasis: 0,
+            averageCostPerShare: 0,
+          },
+          pnl: {
+            unrealizedPnl: 0,
+            unrealizedPnlPercent: 0,
+            realizedPnl: 0,
+            totalPnl: 0,
+            totalPnlPercent: 0,
+          },
+          baseCurrency: 'USDC',
+          transactions: [],
+        };
+
+        setStockData(mockData);
+        setChartData(generateChartData(price));
+      } else {
+        const data = await backendApi.getStockPosition(walletAddress, upperStock);
+        setStockData(data);
+        setChartData(generateChartData(data.currentPrice));
+      }
     } catch (err: any) {
       console.error('Error fetching stock details:', err);
       setError(err.message || 'Failed to load stock details');
@@ -115,20 +164,35 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
       return;
     }
 
+    const upperStock = stock.toUpperCase();
     setBuying(true);
     setBuyError(null);
     setBuySuccess(null);
 
     try {
-      const result = await backendApi.buyStock({
-        userAddress: account.address.toString(),
-        stock: stock.toUpperCase(),
-        amount: amountNum,
-      });
+      if (isPrivateStock(upperStock)) {
+        // Private market buy with USDC
+        const result = await backendApi.buyPrivateStock({
+          userAddress: account.address.toString(),
+          stock: upperStock,
+          amount: amountNum,
+        });
 
-      setBuySuccess(
-        `Bought ${result.stockAmount.toFixed(6)} ${stock.toUpperCase()} for ₹${result.totalSpent.toFixed(2)}`
-      );
+        setBuySuccess(
+          `Bought ${result.tokenAmount.toFixed(6)} ${upperStock} for $${result.totalSpent.toFixed(4)} USDC`
+        );
+      } else {
+        // Public market buy with INR
+        const result = await backendApi.buyStock({
+          userAddress: account.address.toString(),
+          stock: upperStock,
+          amount: amountNum,
+        });
+
+        setBuySuccess(
+          `Bought ${result.stockAmount.toFixed(6)} ${upperStock} for ₹${result.totalSpent.toFixed(2)}`
+        );
+      }
       setBuyAmount('');
       fetchStockDetail(); // Refresh data
     } catch (err: any) {
@@ -150,8 +214,10 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
       return;
     }
 
+    const upperStock = stock.toUpperCase();
+
     if (stockData && amountNum > stockData.position.currentQuantity) {
-      setSellError(`You only have ${stockData.position.currentQuantity.toFixed(6)} ${stock.toUpperCase()} tokens`);
+      setSellError(`You only have ${stockData.position.currentQuantity.toFixed(6)} ${upperStock} tokens`);
       return;
     }
 
@@ -160,15 +226,29 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
     setSellSuccess(null);
 
     try {
-      const result = await backendApi.sellStock({
-        userAddress: account.address.toString(),
-        stock: stock.toUpperCase(),
-        amount: amountNum,
-      });
+      if (isPrivateStock(upperStock)) {
+        // Private market sell for USDC
+        const result = await backendApi.sellPrivateStock({
+          userAddress: account.address.toString(),
+          stock: upperStock,
+          amount: amountNum,
+        });
 
-      setSellSuccess(
-        `Sold ${result.stocksSold.toFixed(6)} ${stock.toUpperCase()} for ₹${result.totalReceived.toFixed(2)}`
-      );
+        setSellSuccess(
+          `Sold ${result.tokensSold.toFixed(6)} ${upperStock} for $${result.netReceived.toFixed(4)} USDC`
+        );
+      } else {
+        // Public market sell for INR
+        const result = await backendApi.sellStock({
+          userAddress: account.address.toString(),
+          stock: upperStock,
+          amount: amountNum,
+        });
+
+        setSellSuccess(
+          `Sold ${result.stocksSold.toFixed(6)} ${upperStock} for ₹${result.totalReceived.toFixed(2)}`
+        );
+      }
       setSellAmount('');
       fetchStockDetail(); // Refresh data
     } catch (err: any) {
@@ -574,14 +654,14 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
             <Typography variant="body2" sx={{ color: '#666666', mb: 0.5 }}>
               Current Price
             </Typography>
-            <Typography variant="h6" sx={{ color: '#00C853', fontWeight: 600 }}>
-              {currencySymbol}{currentPrice.toFixed(2)} per share
+            <Typography variant="h6" sx={{ color: isPrivateStock(stockSymbol) ? '#1565c0' : '#00C853', fontWeight: 600 }}>
+              {isPrivateStock(stockSymbol) ? `$${currentPrice.toFixed(2)} USDC` : `${currencySymbol}${currentPrice.toFixed(2)}`} per share
             </Typography>
           </Box>
 
           <Box sx={{ mb: 2 }}>
             <Typography variant="body2" sx={{ color: '#666666', mb: 1, fontWeight: 500 }}>
-              Amount in INR
+              Amount in {isPrivateStock(stockSymbol) ? 'USDC' : 'INR'}
             </Typography>
             <TextField
               fullWidth
@@ -604,6 +684,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
           {buyAmount && parseFloat(buyAmount) > 0 && (
             <Typography variant="body2" sx={{ color: '#666666', mb: 2 }}>
               You will receive approximately {(parseFloat(buyAmount) / currentPrice).toFixed(6)} {stockSymbol} tokens
+              {isPrivateStock(stockSymbol) && ' (paid in USDC)'}
             </Typography>
           )}
 
@@ -721,7 +802,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
 
           {sellAmount && parseFloat(sellAmount) > 0 && (
             <Typography variant="body2" sx={{ color: '#666666', mb: 2 }}>
-              You will receive approximately {currencySymbol}{(parseFloat(sellAmount) * currentPrice).toFixed(2)}
+              You will receive approximately {isPrivateStock(stockSymbol) ? `$${(parseFloat(sellAmount) * currentPrice).toFixed(4)} USDC` : `${currencySymbol}${(parseFloat(sellAmount) * currentPrice).toFixed(2)}`}
             </Typography>
           )}
 
