@@ -43,27 +43,40 @@ const privateStockPrices: Record<string, number> = {
 // Check if stock is a private market stock
 const isPrivateStock = (symbol: string) => symbol in privateStockPrices;
 
-// Generate dummy price chart data
-const generateChartData = (currentPrice: number, days: number = 30) => {
+// Generate intraday price chart data (hourly intervals)
+const generateChartData = (currentPrice: number) => {
   const data = [];
-  let price = currentPrice * 0.9; // Start from 90% of current price
+  const now = new Date();
+  const marketOpen = new Date(now);
+  marketOpen.setHours(9, 30, 0, 0); // Market opens at 9:30 AM
 
-  for (let i = days; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
+  // If current time is before market open, use yesterday's data
+  if (now < marketOpen) {
+    marketOpen.setDate(marketOpen.getDate() - 1);
+  }
+
+  const hoursToShow = 7; // Show ~7 hours of trading (9:30 AM to 4:30 PM)
+  let price = currentPrice * 0.98; // Start from 98% of current price
+
+  for (let i = 0; i <= hoursToShow * 6; i++) { // 6 data points per hour (every 10 minutes)
+    const time = new Date(marketOpen.getTime() + i * 10 * 60 * 1000); // Every 10 minutes
+
+    // Don't show future times
+    if (time > now) break;
 
     // Random walk with slight upward bias
-    const change = (Math.random() - 0.45) * (currentPrice * 0.02);
-    price = Math.max(price + change, currentPrice * 0.7);
+    const change = (Math.random() - 0.48) * (currentPrice * 0.003);
+    price = Math.max(price + change, currentPrice * 0.95);
 
     // Make the last point exactly the current price
-    if (i === 0) price = currentPrice;
+    if (i === hoursToShow * 6 || time >= now) price = currentPrice;
 
     data.push({
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      date: time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
       price: parseFloat(price.toFixed(2)),
     });
   }
+
   return data;
 };
 
@@ -94,7 +107,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
   const [sellError, setSellError] = useState<string | null>(null);
   const [sellSuccess, setSellSuccess] = useState<string | null>(null);
 
-  const fetchStockDetail = async () => {
+  const fetchStockDetail = async (showLoading = true) => {
     if (!walletAddress || !stock) {
       setError('Wallet not connected or invalid stock symbol');
       setLoading(false);
@@ -104,7 +117,9 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
     const upperStock = stock.toUpperCase();
 
     try {
-      setLoading(true);
+      if (showLoading) {
+        setLoading(true);
+      }
       setError(null);
 
       if (isPrivateStock(upperStock)) {
@@ -179,7 +194,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
         });
 
         setBuySuccess(
-          `Bought ${result.tokenAmount.toFixed(6)} ${upperStock} for $${result.totalSpent.toFixed(4)} USDC`
+          `Bought ${result.tokenAmount?.toFixed(6) || '0'} ${upperStock} for $${result.totalSpent?.toFixed(4) || '0'} USDC`
         );
       } else {
         // Public market buy with INR
@@ -190,11 +205,11 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
         });
 
         setBuySuccess(
-          `Bought ${result.stockAmount.toFixed(6)} ${upperStock} for ₹${result.totalSpent.toFixed(2)}`
+          `Bought ${result.stockAmount?.toFixed(6) || '0'} ${upperStock} for ₹${result.totalSpent?.toFixed(2) || '0'}`
         );
       }
       setBuyAmount('');
-      fetchStockDetail(); // Refresh data
+      fetchStockDetail(false); // Refresh data without showing loading spinner
     } catch (err: any) {
       setBuyError(err.message || 'Failed to buy stock');
     } finally {
@@ -216,7 +231,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
 
     const upperStock = stock.toUpperCase();
 
-    if (stockData && amountNum > stockData.position.currentQuantity) {
+    if (stockData && stockData.position && amountNum > stockData.position.currentQuantity) {
       setSellError(`You only have ${stockData.position.currentQuantity.toFixed(6)} ${upperStock} tokens`);
       return;
     }
@@ -235,7 +250,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
         });
 
         setSellSuccess(
-          `Sold ${result.tokensSold.toFixed(6)} ${upperStock} for $${result.netReceived.toFixed(4)} USDC`
+          `Sold ${result.tokensSold?.toFixed(6) || '0'} ${upperStock} for $${result.netReceived?.toFixed(4) || '0'} USDC`
         );
       } else {
         // Public market sell for INR
@@ -245,12 +260,13 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
           amount: amountNum,
         });
 
+        console.log('[SELL SUCCESS] Backend response:', result);
         setSellSuccess(
-          `Sold ${result.stocksSold.toFixed(6)} ${upperStock} for ₹${result.totalReceived.toFixed(2)}`
+          `Sold ${result.stocksSold?.toFixed(6) || '0'} ${upperStock} for ₹${result.netReceived?.toFixed(2) || '0'}`
         );
       }
       setSellAmount('');
-      fetchStockDetail(); // Refresh data
+      fetchStockDetail(false); // Refresh data without showing loading spinner
     } catch (err: any) {
       setSellError(err.message || 'Failed to sell stock');
     } finally {
@@ -281,13 +297,13 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
     );
   }
 
-  const { stockSymbol, currentPrice, position, pnl, baseCurrency, transactions } = stockData;
+  const { stockSymbol, currentPrice, position, pnl, baseCurrency, transactions } = stockData || {};
   const currencySymbol = getCurrencySymbol(baseCurrency);
   const info = stockInfo[stockSymbol] || { name: stockSymbol, logo: '' };
 
-  const isUnrealizedPositive = pnl.unrealizedPnl >= 0;
-  const isRealizedPositive = pnl.realizedPnl >= 0;
-  const isTotalPositive = pnl.totalPnl >= 0;
+  const isUnrealizedPositive = pnl?.unrealizedPnl >= 0;
+  const isRealizedPositive = pnl?.realizedPnl >= 0;
+  const isTotalPositive = pnl?.totalPnl >= 0;
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -313,7 +329,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
             {info.name} ({stockSymbol})
           </Typography>
           <Typography variant="h5" sx={{ color: '#666666', fontFamily: "'Inter', sans-serif" }}>
-            {currencySymbol}{currentPrice.toFixed(2)} per share
+            {currencySymbol}{currentPrice?.toFixed(2) || '0.00'} per share
           </Typography>
         </Box>
         {/* Buy/Sell Buttons */}
@@ -350,7 +366,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               setSellAmount('');
               setSellModalOpen(true);
             }}
-            disabled={!connected || position.currentQuantity <= 0}
+            disabled={!connected || !position || position.currentQuantity <= 0}
             sx={{
               bgcolor: '#d32f2f',
               color: '#ffffff',
@@ -371,7 +387,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
       <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.08)' }}>
         <CardContent sx={{ p: 3 }}>
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
-            Price History (30 Days)
+            Intraday Price
           </Typography>
           <Box sx={{ width: '100%', height: 300 }}>
             <ResponsiveContainer>
@@ -391,10 +407,11 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                 />
                 <YAxis
                   stroke="#999999"
-                  tick={{ fill: '#666666', fontSize: 12 }}
+                  tick={{ fill: '#666666', fontSize: 11 }}
                   tickLine={{ stroke: '#e0e0e0' }}
-                  tickFormatter={(value) => `${currencySymbol}${value.toLocaleString()}`}
-                  domain={['dataMin - 100', 'dataMax + 100']}
+                  tickFormatter={(value) => `${currencySymbol}${parseFloat(value).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`}
+                  domain={['auto', 'auto']}
+                  width={80}
                 />
                 <Tooltip
                   contentStyle={{
@@ -432,7 +449,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                 Shares Owned
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                {position.currentQuantity.toFixed(6)}
+                {position?.currentQuantity?.toFixed(6) || '0.000000'}
               </Typography>
             </Box>
             <Box>
@@ -440,7 +457,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                 Average Cost
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                {currencySymbol}{position.averageCostPerShare.toFixed(2)}
+                {currencySymbol}{position?.averageCostPerShare?.toFixed(2) || '0.00'}
               </Typography>
             </Box>
             <Box>
@@ -448,7 +465,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                 Total Invested
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                {currencySymbol}{position.totalCostBasis.toFixed(2)}
+                {currencySymbol}{position?.totalCostBasis?.toFixed(2) || '0.00'}
               </Typography>
             </Box>
             <Box>
@@ -456,7 +473,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                 Current Value
               </Typography>
               <Typography variant="h6" sx={{ fontWeight: 600, fontFamily: "'Inter', sans-serif" }}>
-                {currencySymbol}{position.currentValue.toFixed(2)}
+                {currencySymbol}{position?.currentValue?.toFixed(2) || '0.00'}
               </Typography>
             </Box>
           </Box>
@@ -479,10 +496,10 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               </Typography>
             </Box>
             <Typography variant="h5" sx={{ fontWeight: 700, color: isUnrealizedPositive ? '#2e7d32' : '#d32f2f', fontFamily: "'Inter', sans-serif", mb: 0.5 }}>
-              {isUnrealizedPositive ? '+' : ''}{currencySymbol}{pnl.unrealizedPnl.toFixed(2)}
+              {isUnrealizedPositive ? '+' : ''}{currencySymbol}{pnl?.unrealizedPnl?.toFixed(2) || '0.00'}
             </Typography>
             <Typography variant="body2" sx={{ color: isUnrealizedPositive ? '#2e7d32' : '#d32f2f', fontFamily: "'Inter', sans-serif" }}>
-              {isUnrealizedPositive ? '+' : ''}{pnl.unrealizedPnlPercent.toFixed(2)}%
+              {isUnrealizedPositive ? '+' : ''}{pnl?.unrealizedPnlPercent?.toFixed(2) || '0.00'}%
             </Typography>
           </CardContent>
         </Card>
@@ -501,7 +518,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               </Typography>
             </Box>
             <Typography variant="h5" sx={{ fontWeight: 700, color: isRealizedPositive ? '#2e7d32' : '#d32f2f', fontFamily: "'Inter', sans-serif" }}>
-              {isRealizedPositive ? '+' : ''}{currencySymbol}{pnl.realizedPnl.toFixed(2)}
+              {isRealizedPositive ? '+' : ''}{currencySymbol}{pnl?.realizedPnl?.toFixed(2) || '0.00'}
             </Typography>
             <Typography variant="body2" sx={{ color: '#666666', fontFamily: "'Inter', sans-serif" }}>
               From closed positions
@@ -523,10 +540,10 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               </Typography>
             </Box>
             <Typography variant="h5" sx={{ fontWeight: 700, color: isTotalPositive ? '#2e7d32' : '#d32f2f', fontFamily: "'Inter', sans-serif", mb: 0.5 }}>
-              {isTotalPositive ? '+' : ''}{currencySymbol}{pnl.totalPnl.toFixed(2)}
+              {isTotalPositive ? '+' : ''}{currencySymbol}{pnl?.totalPnl?.toFixed(2) || '0.00'}
             </Typography>
             <Typography variant="body2" sx={{ color: isTotalPositive ? '#2e7d32' : '#d32f2f', fontFamily: "'Inter', sans-serif" }}>
-              {isTotalPositive ? '+' : ''}{pnl.totalPnlPercent.toFixed(2)}%
+              {isTotalPositive ? '+' : ''}{pnl?.totalPnlPercent?.toFixed(2) || '0.00'}%
             </Typography>
           </CardContent>
         </Card>
@@ -538,7 +555,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
           <Typography variant="h6" sx={{ fontWeight: 600, mb: 3, fontFamily: "'Inter', sans-serif" }}>
             Transaction History
           </Typography>
-          {transactions.length === 0 ? (
+          {!transactions || transactions.length === 0 ? (
             <Typography sx={{ color: '#999999', textAlign: 'center', py: 4 }}>
               No transactions yet
             </Typography>
@@ -577,13 +594,13 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
                           />
                         </TableCell>
                         <TableCell sx={{ fontFamily: "'Inter', sans-serif" }}>
-                          {tx.quantity.toFixed(6)}
+                          {tx.quantity?.toFixed(6) || '0.000000'}
                         </TableCell>
                         <TableCell sx={{ fontFamily: "'Inter', sans-serif" }}>
                           {tx.pricePerShare ? `${currencySymbol}${tx.pricePerShare.toFixed(2)}` : '-'}
                         </TableCell>
                         <TableCell sx={{ fontFamily: "'Inter', sans-serif" }}>
-                          {currencySymbol}{tx.totalValue.toFixed(2)}
+                          {currencySymbol}{tx.totalValue?.toFixed(2) || '0.00'}
                         </TableCell>
                         <TableCell sx={{
                           fontFamily: "'Inter', sans-serif",
@@ -641,6 +658,8 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
         }}
       >
         <DialogContent sx={{ p: 3 }}>
+          {stockSymbol && (
+          <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
             <Avatar src={info.logo} sx={{ width: 40, height: 40 }}>
               {stockSymbol[0]}
@@ -655,7 +674,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               Current Price
             </Typography>
             <Typography variant="h6" sx={{ color: isPrivateStock(stockSymbol) ? '#1565c0' : '#00C853', fontWeight: 600 }}>
-              {isPrivateStock(stockSymbol) ? `$${currentPrice.toFixed(2)} USDC` : `${currencySymbol}${currentPrice.toFixed(2)}`} per share
+              {isPrivateStock(stockSymbol) ? `$${currentPrice?.toFixed(2) || '0.00'} USDC` : `${currencySymbol}${currentPrice?.toFixed(2) || '0.00'}`} per share
             </Typography>
           </Box>
 
@@ -681,7 +700,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
             />
           </Box>
 
-          {buyAmount && parseFloat(buyAmount) > 0 && (
+          {buyAmount && parseFloat(buyAmount) > 0 && currentPrice && (
             <Typography variant="body2" sx={{ color: '#666666', mb: 2 }}>
               You will receive approximately {(parseFloat(buyAmount) / currentPrice).toFixed(6)} {stockSymbol} tokens
               {isPrivateStock(stockSymbol) && ' (paid in USDC)'}
@@ -731,6 +750,8 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               {buying ? <CircularProgress size={20} sx={{ color: '#ffffff' }} /> : `Buy ${stockSymbol}`}
             </Button>
           </Box>
+          </>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -749,6 +770,8 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
         }}
       >
         <DialogContent sx={{ p: 3 }}>
+          {stockSymbol && (
+          <>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
             <Avatar src={info.logo} sx={{ width: 40, height: 40 }}>
               {stockSymbol[0]}
@@ -763,7 +786,7 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               Your Balance
             </Typography>
             <Typography variant="h6" sx={{ color: '#00C853', fontWeight: 600 }}>
-              {position.currentQuantity.toFixed(6)} {stockSymbol}
+              {position?.currentQuantity?.toFixed(6) || '0.000000'} {stockSymbol}
             </Typography>
           </Box>
 
@@ -793,14 +816,15 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
             />
             <Button
               size="small"
-              onClick={() => setSellAmount(position.currentQuantity.toString())}
+              onClick={() => position && setSellAmount(position.currentQuantity.toString())}
               sx={{ mt: 1, textTransform: 'none', color: '#d32f2f' }}
+              disabled={!position}
             >
               Sell All
             </Button>
           </Box>
 
-          {sellAmount && parseFloat(sellAmount) > 0 && (
+          {sellAmount && parseFloat(sellAmount) > 0 && currentPrice && (
             <Typography variant="body2" sx={{ color: '#666666', mb: 2 }}>
               You will receive approximately {isPrivateStock(stockSymbol) ? `$${(parseFloat(sellAmount) * currentPrice).toFixed(4)} USDC` : `${currencySymbol}${(parseFloat(sellAmount) * currentPrice).toFixed(2)}`}
             </Typography>
@@ -849,6 +873,8 @@ export default function StockDetailView({ walletAddress }: StockDetailViewProps)
               {selling ? <CircularProgress size={20} sx={{ color: '#ffffff' }} /> : `Sell ${stockSymbol}`}
             </Button>
           </Box>
+          </>
+          )}
         </DialogContent>
       </Dialog>
     </Container>

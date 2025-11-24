@@ -119,13 +119,6 @@ router.get('/:address/stock/:stock', async (req, res) => {
 
     const position = await getStockPosition(address, stock.toUpperCase());
 
-    if (!position) {
-      return res.status(404).json({
-        success: false,
-        error: `No position found for ${stock}`,
-      });
-    }
-
     // Exchange rates: USD to other currencies
     const exchangeRates: Record<string, number> = {
       USD: 1.0,
@@ -134,10 +127,36 @@ router.get('/:address/stock/:stock', async (req, res) => {
       EUR: 0.92,
     };
 
-    const exchangeRate = exchangeRates[position.baseCurrency] || 90.0;
-
     // Get current price
     const currentPrice = await getStockPriceFromYahoo(stock.toUpperCase());
+
+    // If no position exists, return empty position with current price
+    if (!position) {
+      const currentPriceInBaseCurrency = currentPrice * exchangeRates['INR'];
+
+      return res.json({
+        success: true,
+        stockSymbol: stock.toUpperCase(),
+        currentPrice: currentPriceInBaseCurrency,
+        position: {
+          currentQuantity: 0,
+          currentValue: 0,
+          totalCostBasis: 0,
+          averageCostPerShare: 0,
+        },
+        pnl: {
+          unrealizedPnl: 0,
+          unrealizedPnlPercent: 0,
+          realizedPnl: 0,
+          totalPnl: 0,
+          totalPnlPercent: 0,
+        },
+        baseCurrency: 'INR',
+        transactions: [],
+      });
+    }
+
+    const exchangeRate = exchangeRates[position.baseCurrency] || 90.0;
     const currentPriceInBaseCurrency = currentPrice * exchangeRate;
 
     // Calculate stock investment (excluding fees) for fair P&L comparison
